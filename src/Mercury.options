@@ -1,0 +1,15 @@
+GRADE = hlc.par.gc
+MCFLAGS += --grade $(GRADE)
+
+EXTERNALS_DIR = ../externals
+
+MCFLAGS += --no-ansi-c
+MCFLAGS += --c-include-dir ../src
+MCFLAGS-httpsrv += --c-include-dir $(EXTERNALS_DIR)/libuv/include
+MCFLAGS-httpsrv += --c-include-dir $(EXTERNALS_DIR)/http-parser
+
+MLOBJS-httpsrv_test += $(EXTERNALS_DIR)/libuv/libuv.a
+MLOBJS-httpsrv_test += $(EXTERNALS_DIR)/http-parser/http_parser.o
+MLLIBS-httpsrv_test += -lpthread
+
+-include Mercury.params
