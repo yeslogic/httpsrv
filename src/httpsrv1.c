@@ -303,7 +303,7 @@ client_on_alloc(uv_handle_t *handle, size_t suggested_size)
 {
     uv_stream_t *stream = stream_from_tcp(tcp_from_handle_checked(handle));
     client_t *client = client_from_stream_data(stream);
-    MR_Word ptr;
+    char *ptr;
 
 #if 1 /* pathological */
     suggested_size = 1;
@@ -312,9 +312,9 @@ client_on_alloc(uv_handle_t *handle, size_t suggested_size)
     DISABLE LOG("[%d:%d] alloc: %ld bytes\n",
         client->id, client->request_count, suggested_size);
 
-    MR_incr_hp_atomic_msg(ptr, MR_bytes_to_words(suggested_size),
-        MR_ALLOC_SITE_NONE, "uv_buf_t");
-    return uv_buf_init((char *) ptr, suggested_size);
+    ptr = buffer_reserve(&client->read_buf, suggested_size);
+
+    return uv_buf_init(ptr, suggested_size);
 }
 
 static void
@@ -326,6 +326,8 @@ client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf)
         client->id, client->request_count, nread);
 
     if (nread > 0) {
+        buffer_advance(&client->read_buf, nread);
+
         /* XXX still susceptible to attack */
         uv_update_time(client->timer.loop);
         uv_timer_start(&client->timer, client_on_read_timeout,
@@ -342,10 +344,8 @@ client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf)
             client->id, client->request_count,
             uv_strerror(err));
         client_close(client);
-        goto leave;
+        return;
     }
-
-    buffer_append(&client->read_buf, buf.base, nread);
 
     if (client->read_buf.len > 0) {
         size_t parsed;
@@ -365,22 +365,18 @@ client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf)
                 client->id, client->request_count,
                 http_errno_name(errnum), http_errno_description(errnum));
             client_close(client);
-            goto leave;
+            return;
         }
 
         if (client->parser.upgrade) {
             LOG("[%d:%d] upgrade not supported\n",
                 client->id, client->request_count);
             client_close(client);
-            goto leave;
+            return;
         }
 
         buffer_shift(&client->read_buf, parsed);
     }
-
-leave:
-    /* libuv does not reuse this buffer. */
-    MR_GC_free(buf.base);
 }
 
 static void
@@ -404,7 +400,7 @@ client_on_message_begin(http_parser *parser)
     client->request_count++;
     LOG("[%d:%d] on_message_begin\n", client->id, client->request_count);
 
-    /* Should we clear read_buf? */
+    /* Do not clear read_buf; would break pipelining. */
     buffer_clear(&client->request_acc.url_buf);
     buffer_clear(&client->request_acc.header_field_buf);
     buffer_clear(&client->request_acc.header_value_buf);

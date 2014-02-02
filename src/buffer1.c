@@ -28,8 +28,8 @@ buffer_clear(buffer_t *buf)
     buf->len = 0;
 }
 
-static void
-buffer_append(buffer_t *buf, const char *adddata, ssize_t addlen)
+static char *
+buffer_reserve(buffer_t *buf, ssize_t addlen)
 {
     ssize_t reqcap;
 
@@ -47,8 +47,26 @@ buffer_append(buffer_t *buf, const char *adddata, ssize_t addlen)
 
     assert(buf->cap >= reqcap);
 
-    memcpy(buf->data + buf->len, adddata, addlen);
+    return buf->data + buf->len;
+}
+
+static void
+buffer_append(buffer_t *buf, const char *adddata, ssize_t addlen)
+{
+    char *next;
+
+    next = buffer_reserve(buf, addlen);
+    memcpy(next, adddata, addlen);
     buf->len += addlen;
+}
+
+static void
+buffer_advance(buffer_t *buf, ssize_t n)
+{
+    ssize_t newlen = buf->len + n;
+    assert(newlen >= buf->len);
+    assert(newlen <= buf->cap);
+    buf->len = newlen;
 }
 
 static void
