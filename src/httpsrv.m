@@ -33,7 +33,11 @@
 
 :- type content
     --->    none
-    ;       string(string).
+    ;       string(string)
+
+            % For application/x-www-form-urlencoded
+            % Keys are in RECEIVED order and duplicate keys are possible.
+    ;       form_urlencoded(assoc_list(string, string)).
 
 :- type request_handler == pred(client, request, io, io).
 :- inst request_handler == (pred(in, in, di, uo) is cc_multi).
@@ -62,6 +66,7 @@
 :- import_module time.
 
 :- import_module http_date.
+:- import_module form_urlencoded.
 
 %-----------------------------------------------------------------------------%
 
@@ -255,12 +260,45 @@ get_expect_header([Field - Value | Tail], Acc0, Acc) :-
         get_expect_header(Tail, Acc0, Acc)
     ).
 
-:- func request_set_body_string(request, string) = request.
+:- func request_set_body(request, string) = request.
 
-:- pragma foreign_export("C", request_set_body_string(in, in) = out,
-    "request_set_body_string").
+:- pragma foreign_export("C", request_set_body(in, in) = out,
+    "request_set_body").
 
-request_set_body_string(Req, String) = Req ^ body := string(String).
+request_set_body(Req0, String) = Req :-
+    (
+        find_header_value(Req0 ^ headers, content_type_header, ContentType),
+        content_type_encoding(ContentType, application_x_www_form_urlencoded),
+        parse_form_urlencoded(String, Form)
+    ->
+        Body = form_urlencoded(Form)
+    ;
+        Body = string(String)
+    ),
+    Req = Req0 ^ body := Body.
+
+:- pred find_header_value(assoc_list(string, string)::in, string::in,
+    string::out) is semidet.
+
+find_header_value(Headers, SearchField, Value) :-
+    list.find_first_match(
+        (pred((F - _)::in) is semidet :- string_equal_ci(F, SearchField)),
+        Headers, _ - Value).
+
+:- pred content_type_encoding(string::in, string::in) is semidet.
+
+content_type_encoding(ContentType, Encoding) :-
+    % The microhttpd sample code does this (matches the prefix)
+    % so I'll assume that's correct.
+    string_prefix_ci(ContentType, Encoding).
+
+:- func content_type_header = string.
+
+content_type_header = "Content-Type".
+
+:- func application_x_www_form_urlencoded = string.
+
+application_x_www_form_urlencoded = "application/x-www-form-urlencoded".
 
 :- pred call_request_handler_pred(request_handler::in(request_handler),
     client::in, request::in, io::di, io::uo) is cc_multi.
@@ -294,6 +332,11 @@ call_request_handler_pred(Pred, Client, Request, !IO) :-
 string_equal_ci(A, B) :-
     string.to_lower(A, Lower),
     string.to_lower(B, Lower).
+
+:- pred string_prefix_ci(string::in, string::in) is semidet.
+
+string_prefix_ci(String, Prefix) :-
+    string.prefix(string.to_lower(String), string.to_lower(Prefix)).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

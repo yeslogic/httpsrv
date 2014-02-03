@@ -664,7 +664,7 @@ client_set_request_body(client_t *client)
         /* none */
     } else {
         /* XXX verify UTF-8 */
-        client->request = request_set_body_string(client->request,
+        client->request = request_set_body(client->request,
             buffer_to_string(&client->request_acc.body_buf));
     }
 }
