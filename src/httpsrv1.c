@@ -516,6 +516,10 @@ client_on_headers_complete(http_parser *parser)
         method, url, client->should_keep_alive);
 
     if (http11_or_greater(&client->parser)) {
+        /*
+        ** The spec requires a Host header to be present.
+        */
+
         int expect = request_get_expect_header(client->request);
         if (expect == 0) {
             /* No Expect: header. */
