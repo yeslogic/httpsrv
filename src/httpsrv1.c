@@ -145,6 +145,17 @@ client_from_timer_data(uv_timer_t *x)
 }
 
 /*
+** Utilities
+*/
+
+static bool
+http11_or_greater(http_parser *parser)
+{
+    return (parser->http_major == 1 && parser->http_minor == 1)
+        || (parser->http_major > 1);
+}
+
+/*
 ** Daemon
 */
 
@@ -501,6 +512,19 @@ client_on_headers_complete(http_parser *parser)
         client->id, client->request_count,
         method, url, client->should_keep_alive);
 
+    if (http11_or_greater(&client->parser)) {
+        int expect = request_get_expect_header(client->request);
+        if (expect == 0) {
+            /* No Expect: header. */
+        } else if (expect > 0) {
+            /* Expect: 100-continue */
+            client_write_100_continue(client);
+        } else {
+            /* Cannot satisfy expectation. */
+            client_write_417_expectation_failed(client);
+        }
+    }
+
     return 0;
 }
 
@@ -524,6 +548,14 @@ client_on_message_complete(http_parser *parser)
     client_t *client = client_from_parser_data(parser);
     MR_String method;
 
+    if (client->response_state == WRITING_RESPONSE) {
+        /*
+        ** This callback may be called after we have sent the
+        ** 417 Expectation Failed code.  Do not continue.
+        */
+        return 0;
+    }
+
     LOG("[%d:%d] on_message_complete\n",
         client->id, client->request_count);
 
@@ -541,6 +573,61 @@ client_on_message_complete(http_parser *parser)
         client, client->request);
 
     return 0;
+}
+
+static void
+client_write_100_continue(client_t *client)
+{
+    static char text[] = "HTTP/1.1 100 Continue\r\n\r\n";
+    static uv_buf_t bufs[1];
+    bufs[0] = uv_buf_init(text, sizeof(text));
+
+    LOG("[%d:%d] write 100-continue\n",
+        client->id, client->request_count);
+
+    client_disable_read_and_stop_timer(client);
+
+    /* XXX set write timeout */
+
+    uv_write(&client->write_req, client_tcp_stream(client),
+        bufs, 1, client_after_write_100_continue);
+}
+
+static void
+client_after_write_100_continue(uv_write_t *req, int status)
+{
+    client_t *client = client_from_stream_data(req->handle);
+
+    LOG("[%d:%d] after write 100-continue: status=%d\n",
+        client->id, client->request_count, status);
+
+    if (status != 0) {
+        client_close(client);
+        return;
+    }
+
+    client_enable_read(client, client_on_read_timeout, READ_CONT_TIMEOUT);
+}
+
+static void
+client_write_417_expectation_failed(client_t *client)
+{
+    static char text[] = "HTTP/1.1 417 Expectation Failed\r\n\r\n";
+    static uv_buf_t bufs[1];
+    bufs[0] = uv_buf_init(text, sizeof(text));
+
+    LOG("[%d:%d] write 417 Expectation Failed\n",
+        client->id, client->request_count);
+
+    client_disable_read_and_stop_timer(client);
+
+    client->should_keep_alive = false;
+    client->response_state = WRITING_RESPONSE;
+
+    /* XXX set write timeout */
+
+    uv_write(&client->write_req, client_tcp_stream(client),
+        bufs, 1, client_after_write);
 }
 
 static void

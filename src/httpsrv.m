@@ -232,6 +232,29 @@ request_add_header(Req0, Field, Value) = Req :-
     Headers = [Field - Value | Headers0],
     Req = Req0 ^ headers := Headers.
 
+:- func request_get_expect_header(request) = int.
+
+:- pragma foreign_export("C", request_get_expect_header(in) = out,
+    "request_get_expect_header").
+
+request_get_expect_header(Req) = Result :-
+    get_expect_header(Req ^ headers, 0, Result).
+
+:- pred get_expect_header(assoc_list(string, string)::in, int::in, int::out)
+    is det.
+
+get_expect_header([], Acc, Acc).
+get_expect_header([Field - Value | Tail], Acc0, Acc) :-
+    ( string_equal_ci(Field, "Expect") ->
+        ( string_equal_ci(Value, "100-continue") ->
+            get_expect_header(Tail, 1, Acc)
+        ;
+            Acc = -1
+        )
+    ;
+        get_expect_header(Tail, Acc0, Acc)
+    ).
+
 :- func request_set_body_string(request, string) = request.
 
 :- pragma foreign_export("C", request_set_body_string(in, in) = out,
@@ -261,6 +284,16 @@ call_request_handler_pred(Pred, Client, Request, !IO) :-
 "
     KeepAlive = (Client->should_keep_alive) ? MR_YES : MR_NO;
 ").
+
+%-----------------------------------------------------------------------------%
+
+% Utilities
+
+:- pred string_equal_ci(string::in, string::in) is semidet.
+
+string_equal_ci(A, B) :-
+    string.to_lower(A, Lower),
+    string.to_lower(B, Lower).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

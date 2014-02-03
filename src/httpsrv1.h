@@ -106,6 +106,18 @@ static int
 client_on_message_complete(http_parser *parser);
 
 static void
+client_write_100_continue(client_t *client);
+
+static void
+client_after_write_100_continue(uv_write_t *req, int status);
+
+static void
+client_write_417_expectation_failed(client_t *client);
+
+static void
+client_after_write_417_expectation_failed(uv_write_t *req, int status);
+
+static void
 client_set_request_body(client_t *client);
 
 static void
