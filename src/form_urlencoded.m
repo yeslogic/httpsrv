@@ -73,16 +73,14 @@ value(Src, Decoded, !PS) :-
 
 octet(Src, Octet, !PS) :-
     next_char(Src, C, !PS),
-    ( unreserved(C) ->
-        char.to_int(C, Octet)
-    ; allow_reserved(C) ->
-        char.to_int(C, Octet)
-    ;
-        C = ('%'),
+    ( C = ('%') ->
         hex_octet(Src, Octet, !PS)
-    ;
-        C = ('+'),
+    ; C = ('+') ->
         char.to_int(' ', Octet)
+    ;
+        C \= ('='),
+        C \= ('&'),
+        char.to_int(C, Octet)
     ).
 
 :- pred hex_octet(src::in, int::out, ps::in, ps::out) is semidet.
@@ -93,54 +91,6 @@ hex_octet(Src, Octet, !PS) :-
     hex_digit(Int_Hi, Hi),
     hex_digit(Int_Lo, Lo),
     Octet = (Int_Hi << 4) \/ Int_Lo.
-
-:- pred unreserved(char::in) is semidet.
-
-unreserved('A'). unreserved('B'). unreserved('C'). unreserved('D').
-unreserved('E'). unreserved('F'). unreserved('G'). unreserved('H').
-unreserved('I'). unreserved('J'). unreserved('K'). unreserved('L').
-unreserved('M'). unreserved('N'). unreserved('O'). unreserved('P').
-unreserved('Q'). unreserved('R'). unreserved('S'). unreserved('T').
-unreserved('U'). unreserved('V'). unreserved('W'). unreserved('X').
-unreserved('Y'). unreserved('Z').
-
-unreserved('a'). unreserved('b'). unreserved('c'). unreserved('d').
-unreserved('e'). unreserved('f'). unreserved('g'). unreserved('h').
-unreserved('i'). unreserved('j'). unreserved('k'). unreserved('l').
-unreserved('m'). unreserved('n'). unreserved('o'). unreserved('p').
-unreserved('q'). unreserved('r'). unreserved('s'). unreserved('t').
-unreserved('u'). unreserved('v'). unreserved('w'). unreserved('x').
-unreserved('y'). unreserved('z').
-
-unreserved('0'). unreserved('1'). unreserved('2'). unreserved('3').
-unreserved('4'). unreserved('5'). unreserved('6'). unreserved('7').
-unreserved('8'). unreserved('9').
-
-unreserved('-').
-unreserved('_').
-unreserved('.').
-unreserved('~').
-
-:- pred allow_reserved(char::in) is semidet.
-
-allow_reserved('!').
-allow_reserved('*').
-allow_reserved('\'').
-allow_reserved('(').
-allow_reserved(')').
-allow_reserved(';').
-allow_reserved(':').
-allow_reserved('@').
-% reserved('&').
-% reserved('=').
-% reserved('+').
-allow_reserved('$').
-allow_reserved(',').
-allow_reserved('/').
-allow_reserved('?').
-allow_reserved('#').
-allow_reserved('[').
-allow_reserved(']').
 
 :- pred hex_digit(int::out, char::in) is semidet.
 
