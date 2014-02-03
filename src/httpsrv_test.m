@@ -55,7 +55,7 @@ real_handler(Client, Request, !IO) :-
     Url = Request ^ url,
     Headers = Request ^ headers,
     Content = [
-        "Method: ", Method, "\n",
+        "Method: ", string(Method), "\n",
         "URL: ", Url, "\n",
         "Headers: ", string(Headers), "\n"
     ],

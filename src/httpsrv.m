@@ -17,10 +17,18 @@
 
 :- type request
     --->    request(
-                method  :: string,
+                method  :: method,
                 url     :: string,
                 headers :: assoc_list(string, string)
             ).
+
+:- type method
+    --->    delete
+    ;       get
+    ;       head
+    ;       post
+    ;       put
+    ;       other(string).
 
 :- type request_handler == pred(client, request, io, io).
 :- inst request_handler == (pred(in, in, di, uo) is cc_multi).
@@ -178,14 +186,29 @@ sum_length(Xs) = foldl(plus, map(length, Xs), 0).
 
 :- pragma foreign_export("C", request_init = out, "request_init").
 
-request_init = request("", "", []).
+request_init = request(other(""), "", []).
 
 :- func request_set_method(request, string) = request.
 
 :- pragma foreign_export("C", request_set_method(in, in) = out,
     "request_set_method").
 
-request_set_method(Req, Method) = Req ^ method := Method.
+request_set_method(Req0, MethodString) = Req :-
+    ( method(MethodString, Method) ->
+        Req = Req0 ^ method := Method
+    ;
+        Req = Req0 ^ method := other(MethodString)
+    ).
+
+:- pred method(string, method).
+:- mode method(in, out) is semidet.
+:- mode method(out, in) is semidet.
+
+method("DELETE", delete).
+method("GET", get).
+method("HEAD", head).
+method("POST", post).
+method("PUT", put).
 
 :- func request_set_url(request, string) = request.
 
