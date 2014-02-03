@@ -19,7 +19,8 @@
     --->    request(
                 method  :: method,
                 url     :: string,
-                headers :: assoc_list(string, string)
+                headers :: assoc_list(string, string),
+                body    :: content
             ).
 
 :- type method
@@ -29,6 +30,10 @@
     ;       post
     ;       put
     ;       other(string).
+
+:- type content
+    --->    none
+    ;       string(string).
 
 :- type request_handler == pred(client, request, io, io).
 :- inst request_handler == (pred(in, in, di, uo) is cc_multi).
@@ -186,7 +191,7 @@ sum_length(Xs) = foldl(plus, map(length, Xs), 0).
 
 :- pragma foreign_export("C", request_init = out, "request_init").
 
-request_init = request(other(""), "", []).
+request_init = request(other(""), "", [], none).
 
 :- func request_set_method(request, string) = request.
 
@@ -226,6 +231,13 @@ request_add_header(Req0, Field, Value) = Req :-
     Req0 ^ headers = Headers0,
     Headers = [Field - Value | Headers0],
     Req = Req0 ^ headers := Headers.
+
+:- func request_set_body_string(request, string) = request.
+
+:- pragma foreign_export("C", request_set_body_string(in, in) = out,
+    "request_set_body_string").
+
+request_set_body_string(Req, String) = Req ^ body := string(String).
 
 :- pred call_request_handler_pred(request_handler::in(request_handler),
     client::in, request::in, io::di, io::uo) is cc_multi.

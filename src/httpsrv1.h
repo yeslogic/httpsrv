@@ -46,6 +46,7 @@ struct client {
         buffer_t header_field_buf;
         buffer_t header_value_buf;
         enum last_header_cb last_header_cb;
+        buffer_t body_buf;
     } request_acc;
     MR_Word request;
     bool should_keep_alive;
@@ -103,6 +104,9 @@ client_on_body(http_parser *parser, const char *at, size_t length);
 
 static int
 client_on_message_complete(http_parser *parser);
+
+static void
+client_set_request_body(client_t *client);
 
 static void
 client_on_async(uv_async_t *async, int status);

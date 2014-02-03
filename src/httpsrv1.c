@@ -254,6 +254,7 @@ server_on_connect(uv_stream_t *server_handle, int status)
     buffer_init(&client->request_acc.header_field_buf);
     buffer_init(&client->request_acc.header_value_buf);
     client->request_acc.last_header_cb = NONE;
+    buffer_init(&client->request_acc.body_buf);
     client->request = request_init();
     client->should_keep_alive = false;
 
@@ -405,6 +406,7 @@ client_on_message_begin(http_parser *parser)
     buffer_clear(&client->request_acc.header_field_buf);
     buffer_clear(&client->request_acc.header_value_buf);
     client->request_acc.last_header_cb = NONE;
+    buffer_clear(&client->request_acc.body_buf);
     client->request = request_init();
     client->should_keep_alive = 0;
 
@@ -517,7 +519,8 @@ client_on_body(http_parser *parser, const char *at, size_t length)
     LOG("[%d:%d] on_body: %d bytes\n",
         client->id, client->request_count, length);
 
-    /* XXX do something with the body */
+    /* XXX limit on body length */
+    buffer_append(&client->request_acc.body_buf, at, length);
 
     return 0;
 }
@@ -538,14 +541,32 @@ client_on_message_complete(http_parser *parser)
         LOG("[%d:%d] on_message_complete: upgrade not supported\n",
             client->id, client->request_count);
         /* The connection will be closed in client_on_read. */
-    } else {
-        assert(client->response_state == IDLE);
-        client->response_state = PREPARING_RESPONSE;
-        call_request_handler_pred(client->daemon->request_handler,
-            client, client->request);
+        return 0;
     }
 
+    /* Pick up the body. */
+    client_set_request_body(client);
+    buffer_init(&client->request_acc.body_buf);
+
+    /* Call the request handler. */
+    assert(client->response_state == IDLE);
+    client->response_state = PREPARING_RESPONSE;
+    call_request_handler_pred(client->daemon->request_handler,
+        client, client->request);
+
     return 0;
+}
+
+static void
+client_set_request_body(client_t *client)
+{
+    if (client->request_acc.body_buf.len == 0) {
+        /* none */
+    } else {
+        /* XXX verify UTF-8 */
+        client->request = request_set_body_string(client->request,
+            buffer_to_string(&client->request_acc.body_buf));
+    }
 }
 
 static void

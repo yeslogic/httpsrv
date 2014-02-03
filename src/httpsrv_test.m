@@ -54,10 +54,12 @@ real_handler(Client, Request, !IO) :-
     Method = Request ^ method,
     Url = Request ^ url,
     Headers = Request ^ headers,
+    Body = Request ^ body,
     Content = [
         "Method: ", string(Method), "\n",
         "URL: ", Url, "\n",
-        "Headers: ", string(Headers), "\n"
+        "Headers: ", string(Headers), "\n",
+        "Body: ", string(Body), "\n"
     ],
     set_response(Client, Content, !IO),
     cc_multi_equal(!IO).
