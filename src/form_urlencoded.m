@@ -28,6 +28,18 @@
 :- import_module string.
 :- import_module unit.
 
+% UNHANDLED YET
+%
+% http://www.w3.org/html/wg/drafts/html/master/forms.html#application/x-www-form-urlencoded-decoding-algorithm
+%
+% - if the first control of a form is 'text' and has name "isindex", the
+% browser will send only the value for that control, probably without even an
+% equals sign.
+%
+% - a hidden control named "_charset_" without a value will cause the browser
+% to send the character encoding as a value, which is the character encoding by
+% which to decode the names/values in the form.
+
 %-----------------------------------------------------------------------------%
 
 parse_form_urlencoded(Input, AssocList) :-
