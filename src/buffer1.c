@@ -14,6 +14,18 @@ pot(ssize_t x)
     return y;
 }
 
+static void *
+gc_realloc_atomic(void *oldptr, size_t size)
+{
+    if (oldptr == NULL) {
+        MR_Word ptr;
+        MR_incr_hp_atomic(ptr, MR_bytes_to_words(size));
+        return (void *) ptr;
+    } else {
+        return MR_GC_realloc(oldptr, size);
+    }
+}
+
 static void
 buffer_init(buffer_t *buf)
 {
@@ -41,7 +53,7 @@ buffer_reserve(buffer_t *buf, ssize_t addlen)
 
     if (buf->cap < reqcap) {
 	ssize_t newcap = pot(reqcap);
-	buf->data = MR_GC_realloc(buf->data, newcap);
+	buf->data = gc_realloc_atomic(buf->data, newcap);
 	buf->cap = newcap;
     }
 
