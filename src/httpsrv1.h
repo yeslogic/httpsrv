@@ -26,6 +26,7 @@ enum last_header_cb {
 enum response_state {
     IDLE,
     PREPARING_RESPONSE,
+    WRITING_100_CONTINUE,
     WRITING_RESPONSE
 };
 
@@ -51,6 +52,7 @@ struct client {
     MR_Word request;
     bool should_keep_alive;
 
+    bool deferred_on_message_complete;
     enum response_state response_state;
     uv_buf_t *response_bufs;    /* NULL or array */
     unsigned int response_bufs_length;

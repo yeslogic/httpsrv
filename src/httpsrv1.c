@@ -268,6 +268,7 @@ server_on_connect(uv_stream_t *server_handle, int status)
     buffer_init(&client->request_acc.body_buf);
     client->request = request_init();
     client->should_keep_alive = false;
+    client->deferred_on_message_complete = false;
 
     client->response_state = IDLE;
     client->response_bufs = NULL;
@@ -412,7 +413,8 @@ client_on_message_begin(http_parser *parser)
     client->request_acc.last_header_cb = NONE;
     buffer_clear(&client->request_acc.body_buf);
     client->request = request_init();
-    client->should_keep_alive = 0;
+    client->should_keep_alive = false;
+    client->deferred_on_message_complete = false;
 
     assert(client->response_state == IDLE);
     assert(client->response_bufs == NULL);
@@ -507,6 +509,7 @@ client_on_headers_complete(http_parser *parser)
     client->request = request_set_url(client->request, url);
 
     client->should_keep_alive = http_should_keep_alive(parser);
+    client->deferred_on_message_complete = false;
 
     LOG("[%d:%d] on_headers_complete: method='%s', url='%s', should_keep_alive=%d\n",
         client->id, client->request_count,
@@ -548,11 +551,18 @@ client_on_message_complete(http_parser *parser)
     client_t *client = client_from_parser_data(parser);
     MR_String method;
 
-    if (client->response_state == WRITING_RESPONSE) {
+    if (client->response_state != IDLE) {
         /*
-        ** This callback may be called after we have sent the
+        ** This callback may be called after we have started sending the
+        ** 100-continue status line but before client_after_write_100_continue.
+        ** Set a flag to run this callback later.
+        **
+        ** This callback may also be called after we have sent the
         ** 417 Expectation Failed code.  Do not continue.
         */
+        LOG("[%d:%d] on_message_complete: deferred\n",
+            client->id, client->request_count);
+        client->deferred_on_message_complete = true;
         return 0;
     }
 
@@ -567,7 +577,9 @@ client_on_message_complete(http_parser *parser)
     buffer_init(&client->request_acc.body_buf);
 
     /* Call the request handler. */
-    assert(client->response_state == IDLE);
+    LOG("[%d:%d] on_message_complete: call request handler\n",
+        client->id, client->request_count);
+
     client->response_state = PREPARING_RESPONSE;
     call_request_handler_pred(client->daemon->request_handler,
         client, client->request);
@@ -589,6 +601,7 @@ client_write_100_continue(client_t *client)
 
     /* XXX set write timeout */
 
+    client->response_state = WRITING_100_CONTINUE;
     uv_write(&client->write_req, client_tcp_stream(client),
         bufs, 1, client_after_write_100_continue);
 }
@@ -601,12 +614,22 @@ client_after_write_100_continue(uv_write_t *req, int status)
     LOG("[%d:%d] after write 100-continue: status=%d\n",
         client->id, client->request_count, status);
 
+    assert(client->response_state == WRITING_100_CONTINUE);
+    client->response_state = IDLE;
+
     if (status != 0) {
         client_close(client);
         return;
     }
 
-    client_enable_read(client, client_on_read_timeout, READ_CONT_TIMEOUT);
+    if (client->deferred_on_message_complete) {
+        LOG("[%d:%d] calling deferred on_message_complete\n",
+            client->id, client->request_count, status);
+        client->deferred_on_message_complete = false;
+        client_on_message_complete(&client->parser);
+    } else {
+        client_enable_read(client, client_on_read_timeout, READ_CONT_TIMEOUT);
+    }
 }
 
 static void
@@ -654,13 +677,12 @@ client_on_async(uv_async_t *async, int status)
     ** uv_async_send causes the callback to be invoked one or more times;
     ** ignore the second and subsequent invocations.
     */
-    if (client->response_state == WRITING_RESPONSE) {
-        LOG("[%d:%d] already started writing response\n",
+    if (client->response_state != PREPARING_RESPONSE) {
+        LOG("[%d:%d] on_async: ignored due to response_state\n",
             client->id, client->request_count);
         return;
     }
 
-    assert(client->response_state == PREPARING_RESPONSE);
     assert(client->response_bufs);
 
     client->response_state = WRITING_RESPONSE;
