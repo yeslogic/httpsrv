@@ -369,13 +369,6 @@ client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf)
             return;
         }
 
-        if (client->parser.upgrade) {
-            LOG("[%d:%d] upgrade not supported\n",
-                client->id, client->request_count);
-            client_close(client);
-            return;
-        }
-
         buffer_shift(&client->read_buf, parsed);
     }
 }
@@ -536,13 +529,6 @@ client_on_message_complete(http_parser *parser)
 
     /* Don't read any more while the request handle works. */
     client_disable_read_and_stop_timer(client);
-
-    if (parser->upgrade) {
-        LOG("[%d:%d] on_message_complete: upgrade not supported\n",
-            client->id, client->request_count);
-        /* The connection will be closed in client_on_read. */
-        return 0;
-    }
 
     /* Pick up the body. */
     client_set_request_body(client);
