@@ -48,6 +48,7 @@ struct client {
         buffer_t header_value_buf;
         enum last_header_cb last_header_cb;
         buffer_t body_buf;
+        MR_Word multipart_parser; /* 0 or pointer */
     } request_acc;
     MR_Word request;
     bool should_keep_alive;
@@ -100,6 +101,9 @@ client_on_header_value(http_parser *parser, const char *at, size_t length);
 
 static int
 client_on_headers_complete(http_parser *parser);
+
+static void
+client_maybe_start_formdata_parser(client_t *client);
 
 static int
 client_on_body(http_parser *parser, const char *at, size_t length);

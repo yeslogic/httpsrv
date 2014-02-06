@@ -266,6 +266,7 @@ server_on_connect(uv_stream_t *server_handle, int status)
     buffer_init(&client->request_acc.header_value_buf);
     client->request_acc.last_header_cb = NONE;
     buffer_init(&client->request_acc.body_buf);
+    client->request_acc.multipart_parser = 0;
     client->request = request_init();
     client->should_keep_alive = false;
     client->deferred_on_message_complete = false;
@@ -412,6 +413,7 @@ client_on_message_begin(http_parser *parser)
     buffer_clear(&client->request_acc.header_value_buf);
     client->request_acc.last_header_cb = NONE;
     buffer_clear(&client->request_acc.body_buf);
+    client->request_acc.multipart_parser = 0;
     client->request = request_init();
     client->should_keep_alive = false;
     client->deferred_on_message_complete = false;
@@ -523,6 +525,7 @@ client_on_headers_complete(http_parser *parser)
         int expect = request_get_expect_header(client->request);
         if (expect == 0) {
             /* No Expect: header. */
+            client_maybe_start_formdata_parser(client);
         } else if (expect > 0) {
             /* Expect: 100-continue */
             client_write_100_continue(client);
@@ -530,9 +533,27 @@ client_on_headers_complete(http_parser *parser)
             /* Cannot satisfy expectation. */
             client_write_417_expectation_failed(client);
         }
+    } else {
+        client_maybe_start_formdata_parser(client);
     }
 
     return 0;
+}
+
+static void
+client_maybe_start_formdata_parser(client_t *client)
+{
+    MR_bool succeeded;
+    MR_String boundary;
+
+    succeeded = request_search_multipart_formdata_boundary(client->request,
+        &boundary);
+    if (succeeded) {
+        LOG("[%d:%d] multipart/form-data parser: boundary='%s'\n",
+            client->id, client->request_count, boundary);
+        client->request_acc.multipart_parser =
+            create_formdata_parser(boundary);
+    }
 }
 
 static int
@@ -540,11 +561,34 @@ client_on_body(http_parser *parser, const char *at, size_t length)
 {
     client_t *client = client_from_parser_data(parser);
 
-    LOG("[%d:%d] on_body: %d bytes\n",
+    DISABLE LOG("[%d:%d] on_body: %d bytes\n",
         client->id, client->request_count, length);
 
     /* XXX limit on body length */
     buffer_append(&client->request_acc.body_buf, at, length);
+
+    /* Run the form-data parser if in effect. */
+    if (client->request_acc.multipart_parser != 0) {
+        MR_Integer parsed;
+        MR_Bool is_error;
+        MR_String error_string;
+
+        parse_formdata(&client->request_acc.body_buf, 0, &parsed,
+            client->request_acc.multipart_parser,
+            &client->request_acc.multipart_parser,
+            &is_error, &error_string);
+
+        buffer_shift(&client->request_acc.body_buf, parsed);
+
+        DISABLE LOG("[%d:%d] parse_formdata: parsed=%ld\n",
+            client->id, client->request_count, parsed);
+
+        if (is_error) {
+            LOG("[%d:%d] parse_formdata error: %s\n",
+                client->id, client->request_count, error_string);
+            return -1;
+        }
+    }
 
     return 0;
 }
@@ -579,6 +623,7 @@ client_on_message_complete(http_parser *parser)
     /* Pick up the body. */
     client_set_request_body(client);
     buffer_init(&client->request_acc.body_buf);
+    client->request_acc.multipart_parser = 0;
 
     /* Call the request handler. */
     LOG("[%d:%d] on_message_complete: call request handler\n",
@@ -626,6 +671,8 @@ client_after_write_100_continue(uv_write_t *req, int status)
         return;
     }
 
+    client_maybe_start_formdata_parser(client);
+
     if (client->deferred_on_message_complete) {
         LOG("[%d:%d] calling deferred on_message_complete\n",
             client->id, client->request_count, status);
@@ -660,11 +707,17 @@ client_write_417_expectation_failed(client_t *client)
 static void
 client_set_request_body(client_t *client)
 {
-    if (client->request_acc.body_buf.len == 0) {
+    LOG("[%d:%d] set_request_body\n",
+        client->id, client->request_count);
+
+    if (client->request_acc.multipart_parser != 0) {
+        client->request = request_set_body_formdata(client->request,
+            client->request_acc.multipart_parser);
+    } else if (client->request_acc.body_buf.len == 0) {
         /* none */
     } else {
         /* XXX verify UTF-8 */
-        client->request = request_set_body(client->request,
+        client->request = request_set_body_stringish(client->request,
             buffer_to_string(&client->request_acc.body_buf));
     }
 }

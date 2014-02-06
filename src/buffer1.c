@@ -26,7 +26,7 @@ gc_realloc_atomic(void *oldptr, size_t size)
     }
 }
 
-static void
+void
 buffer_init(buffer_t *buf)
 {
     buf->data = NULL;
@@ -34,13 +34,21 @@ buffer_init(buffer_t *buf)
     buf->cap = 0;
 }
 
-static void
+buffer_t *
+buffer_new(void)
+{
+    buffer_t *buf = MR_GC_NEW(buffer_t);
+    buffer_init(buf);
+    return buf;
+}
+
+void
 buffer_clear(buffer_t *buf)
 {
     buf->len = 0;
 }
 
-static char *
+char *
 buffer_reserve(buffer_t *buf, ssize_t addlen)
 {
     ssize_t reqcap;
@@ -62,7 +70,7 @@ buffer_reserve(buffer_t *buf, ssize_t addlen)
     return buf->data + buf->len;
 }
 
-static void
+void
 buffer_append(buffer_t *buf, const char *adddata, ssize_t addlen)
 {
     char *next;
@@ -72,7 +80,7 @@ buffer_append(buffer_t *buf, const char *adddata, ssize_t addlen)
     buf->len += addlen;
 }
 
-static void
+void
 buffer_advance(buffer_t *buf, ssize_t n)
 {
     ssize_t newlen = buf->len + n;
@@ -81,7 +89,7 @@ buffer_advance(buffer_t *buf, ssize_t n)
     buf->len = newlen;
 }
 
-static void
+void
 buffer_shift(buffer_t *buf, ssize_t n)
 {
     ssize_t newlen = buf->len - n;
@@ -90,8 +98,14 @@ buffer_shift(buffer_t *buf, ssize_t n)
     buf->len = newlen;
 }
 
-static MR_String
-make_string(const char *buf, uint16_t off, uint16_t len)
+MR_String
+buffer_to_string(buffer_t *buf)
+{
+    return make_string(buf->data, 0, buf->len);
+}
+
+MR_String
+make_string(const char *buf, size_t off, size_t len)
 {
     MR_String s;
 
@@ -99,12 +113,6 @@ make_string(const char *buf, uint16_t off, uint16_t len)
     memcpy(s, buf + off, len);
     s[len] = '\0';
     return s;
-}
-
-static MR_String
-buffer_to_string(buffer_t *buf)
-{
-    return make_string(buf->data, 0, buf->len);
 }
 
 /* vim: set sts=4 sw=4 et: */

@@ -15,6 +15,14 @@
 :- type daemon.
 :- type client.
 
+:- type server_setting
+    --->    bind_address(string)
+    ;       port(int)
+    ;       back_log(int).
+
+:- type request_handler == pred(client, request, io, io).
+:- inst request_handler == (pred(in, in, di, uo) is cc_multi).
+
 :- type request
     --->    request(
                 method  :: method,
@@ -37,15 +45,22 @@
 
             % For application/x-www-form-urlencoded
             % Keys are in RECEIVED order and duplicate keys are possible.
-    ;       form_urlencoded(assoc_list(string, string)).
+    ;       form_urlencoded(assoc_list(string, string))
 
-:- type request_handler == pred(client, request, io, io).
-:- inst request_handler == (pred(in, in, di, uo) is cc_multi).
+            % For multipart/form-data
+            % Keys are in RECEIVED order and duplicate keys are possible.
+    ;       multipart_formdata(assoc_list(string, formdata)).
 
-:- type server_setting
-    --->    bind_address(string)
-    ;       port(int)
-    ;       back_log(int).
+:- type formdata
+    --->    formdata(
+                disposition                 :: string,
+                filename                    :: maybe(string),
+                media_type                  :: string,
+                content_transfer_encoding   :: maybe(string),
+                content                     :: formdata_content
+            ).
+
+:- type formdata_content.
 
 :- pred setup(request_handler::in(request_handler), list(server_setting)::in,
     maybe_error(daemon)::out, io::di, io::uo) is det.
@@ -65,8 +80,14 @@
 :- import_module string.
 :- import_module time.
 
-:- import_module http_date.
+:- import_module buffer.
 :- import_module form_urlencoded.
+:- import_module http_date.
+:- import_module mime_headers.
+:- import_module multipart_parser.
+
+:- include_module httpsrv.formdata_accum.
+:- import_module httpsrv.formdata_accum.
 
 %-----------------------------------------------------------------------------%
 
@@ -76,20 +97,21 @@
 :- pragma foreign_decl("C", "
     typedef struct daemon daemon_t;
     typedef struct client client_t;
+    typedef struct buffer buffer_t;
 ").
 
 :- pragma foreign_decl("C", local, "
     #include ""uv.h""
     #include ""http_parser.h""
 
-    #include ""buffer1.h""
     #include ""httpsrv1.h""
 ").
 
 :- pragma foreign_code("C", "
-    #include ""buffer1.c""
     #include ""httpsrv1.c""
 ").
+
+:- type formdata_content == list(buffer).
 
 %-----------------------------------------------------------------------------%
 
@@ -260,15 +282,16 @@ get_expect_header([Field - Value | Tail], Acc0, Acc) :-
         get_expect_header(Tail, Acc0, Acc)
     ).
 
-:- func request_set_body(request, string) = request.
+:- func request_set_body_stringish(request, string) = request.
 
-:- pragma foreign_export("C", request_set_body(in, in) = out,
-    "request_set_body").
+:- pragma foreign_export("C", request_set_body_stringish(in, in) = out,
+    "request_set_body_stringish").
 
-request_set_body(Req0, String) = Req :-
+request_set_body_stringish(Req0, String) = Req :-
+    Headers = wrap(Req0 ^ headers),
     (
-        find_header_value(Req0 ^ headers, content_type_header, ContentType),
-        content_type_encoding(ContentType, application_x_www_form_urlencoded),
+        get_content_type(Headers, MediaType, _Params),
+        media_type_equals(MediaType, application_x_www_form_urlencoded),
         parse_form_urlencoded(String, Form)
     ->
         Body = form_urlencoded(Form)
@@ -277,28 +300,58 @@ request_set_body(Req0, String) = Req :-
     ),
     Req = Req0 ^ body := Body.
 
-:- pred find_header_value(assoc_list(string, string)::in, string::in,
-    string::out) is semidet.
-
-find_header_value(Headers, SearchField, Value) :-
-    list.find_first_match(
-        (pred((F - _)::in) is semidet :- string_equal_ci(F, SearchField)),
-        Headers, _ - Value).
-
-:- pred content_type_encoding(string::in, string::in) is semidet.
-
-content_type_encoding(ContentType, Encoding) :-
-    % The microhttpd sample code does this (matches the prefix)
-    % so I'll assume that's correct.
-    string_prefix_ci(ContentType, Encoding).
-
-:- func content_type_header = string.
-
-content_type_header = "Content-Type".
-
 :- func application_x_www_form_urlencoded = string.
 
 application_x_www_form_urlencoded = "application/x-www-form-urlencoded".
+
+:- pred request_search_multipart_formdata_boundary(request::in, string::out)
+    is semidet.
+
+:- pragma foreign_export("C",
+    request_search_multipart_formdata_boundary(in, out),
+    "request_search_multipart_formdata_boundary").
+
+request_search_multipart_formdata_boundary(Req, Boundary) :-
+    Headers = wrap(Req ^ headers),
+    search_multipart_formdata_boundary(Headers, Boundary).
+
+:- func create_formdata_parser(string) = multipart_parser(formdata_accum).
+
+:- pragma foreign_export("C", create_formdata_parser(in) = out,
+    "create_formdata_parser").
+
+create_formdata_parser(Boundary) =
+    multipart_parser.init(Boundary, formdata_accum.init).
+
+:- pred parse_formdata(buffer::in, int::in, int::out,
+    multipart_parser(formdata_accum)::in, multipart_parser(formdata_accum)::out,
+    bool::out, string::out, io::di, io::uo) is det.
+
+:- pragma foreign_export("C",
+    parse_formdata(in, in, out, in, out, out, out, di, uo),
+    "parse_formdata").
+
+parse_formdata(Buf, !BufPos, !PS, IsError, ErrorString, !IO) :-
+    multipart_parser.execute(Buf, !BufPos, !PS, !IO),
+    multipart_parser.get_error(!.PS, MaybeError),
+    (
+        MaybeError = ok,
+        IsError = no,
+        ErrorString = ""
+    ;
+        MaybeError = error(ErrorString),
+        IsError = yes
+    ).
+
+:- func request_set_body_formdata(request, multipart_parser(formdata_accum))
+    = request.
+
+:- pragma foreign_export("C", request_set_body_formdata(in, in) = out,
+    "request_set_body_formdata").
+
+request_set_body_formdata(Req0, PS) = Req :-
+    Parts = get_parts(get_userdata(PS)),
+    Req = Req0 ^ body := multipart_formdata(Parts).
 
 :- pred call_request_handler_pred(request_handler::in(request_handler),
     client::in, request::in, io::di, io::uo) is cc_multi.
@@ -332,11 +385,6 @@ call_request_handler_pred(Pred, Client, Request, !IO) :-
 string_equal_ci(A, B) :-
     string.to_lower(A, Lower),
     string.to_lower(B, Lower).
-
-:- pred string_prefix_ci(string::in, string::in) is semidet.
-
-string_prefix_ci(String, Prefix) :-
-    string.prefix(string.to_lower(String), string.to_lower(Prefix)).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
