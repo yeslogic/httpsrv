@@ -124,8 +124,10 @@ execute(Buf, !BufPos, !PS, !IO) :-
 execute(Buf, !BufPos, !PS, !IO) :-
     !.PS ^ state = in_headers,
     HeadersStartPos = !.BufPos,
-    find_crlf_crlf(Buf, HeadersEndPos, !BufPos, !IO),
-    ( HeadersEndPos >= 0 ->
+    find_crlf_crlf(Buf, CrlfCrlfPos, !BufPos, !IO),
+    ( CrlfCrlfPos >= 0 ->
+        % The first CRLF is part of the last header field.
+        HeadersEndPos = CrlfCrlfPos + 2,
         have_header_block(Buf, HeadersStartPos, HeadersEndPos, !PS, !IO),
         execute(Buf, !BufPos, !PS, !IO)
     ;

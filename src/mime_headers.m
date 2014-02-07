@@ -5,36 +5,38 @@
 
 :- interface.
 
-:- import_module assoc_list.
-
 :- type headers.
 
 :- type parameters.
 
 :- type media_type
-    --->    media_type(string). % case-insensitive
+    --->    media_type(string). % case-insensitive, stored in lowercase
 
-:- func wrap(assoc_list(string, string)) = headers.
+:- type maybe_multipart
+    --->    not_multipart
+    ;       multipart(media_type, string) % second argument is boundary
+    ;       error(string).
+
+:- func init_headers = headers.
+
+:- pred add_header(string::in, string::in, headers::in, headers::out) is det.
 
 :- pred parse_headers(string::in, headers::out) is semidet.
 
-:- pred search_header(headers::in, string::in, string::out) is semidet.
-
-:- pred parse_header_value(string::in, string::out, parameters::out) is det.
+:- pred search_field(headers::in, string::in, string::out) is semidet.
 
 :- pred search_parameter(parameters::in, string::in, string::out) is semidet.
-
-:- pred search_content_disposition(headers::in, string::out, parameters::out)
-    is semidet.
 
 :- pred get_content_type(headers::in, media_type::out, parameters::out) is det.
 
 :- pred media_type_equals(media_type::in, string::in) is semidet.
 
-:- pred search_multipart_formdata_boundary(headers::in, string::out)
-    is semidet.
+:- pred is_multipart_content_type(headers::in, maybe_multipart::out) is det.
 
 :- pred search_content_transfer_encoding(headers::in, string::out)
+    is semidet.
+
+:- pred search_content_disposition(headers::in, string::out, parameters::out)
     is semidet.
 
 %-----------------------------------------------------------------------------%
@@ -42,158 +44,134 @@
 
 :- implementation.
 
-:- import_module int.
+:- import_module assoc_list.
 :- import_module list.
+:- import_module map.
 :- import_module pair.
-:- import_module require.
 :- import_module string.
 
-:- type headers == assoc_list(string, string).
+:- import_module rfc2045.
+:- import_module rfc2046.
+:- import_module rfc2183.
+:- import_module rfc2822.
 
-:- type parameters == list(string). % stripped
+/*
+** [RFC 822] Standard for the Format of APRA Internet Text Messages
+** [RFC 2822] Internet Message Format
+** [RFC 5322] Internet Message Format
+**
+** [RFC 2045] MIME Part One: Format of Internet Message Bodies
+** [RFC 2046] MIME Part Two: Media Types
+** [RFC 2183] The Content-Disposition Header Field
+** [RFC 2388] Returning Values from Forms: multipart/form-data
+**
+** NOT [RFC 2616] This relates to HTTP and not the payload.
+** NOT [RFC 6266] This relates to HTTP and not the payload.
+*/
 
-%-----------------------------------------------------------------------------%
+    % XXX how to handle duplicate fields?
+:- type headers == list(rfc2822.field).
 
-wrap(Headers) = Headers.
-
-%-----------------------------------------------------------------------------%
-
-    % XXX MIME headers can be folded, but in HTTP?
-    %
-parse_headers(HeaderBlock, Headers) :-
-    Lines = string.split_at_string(crlf, HeaderBlock),
-    list.map(parse_header_pair, Lines, Headers).
-
-:- pred parse_header_pair(string::in, pair(string, string)::out) is semidet.
-
-parse_header_pair(Line, Field - Value) :-
-    string.sub_string_search(Line, ":", ColonPos),
-    string.unsafe_between(Line, 0, ColonPos, Field0),
-    string.unsafe_between(Line, ColonPos + 1, count_code_units(Line), Value0),
-    Field = string.strip(Field0),
-    Value = string.strip(Value0).
-
-:- func crlf = string.
-
-crlf = "\r\n".
+:- type parameters == rfc2045.parameters.
 
 %-----------------------------------------------------------------------------%
 
-search_header(Headers, SearchField, Value) :-
-    list.find_first_match(
-        (pred((F - _)::in) is semidet :- string_equal_ci(F, SearchField)),
-        Headers, _ - Value).
+init_headers = [].
+
+add_header(Name, Body, Headers0, Headers) :-
+    string.to_lower(Name, NameLower),
+    Headers = [NameLower - Body | Headers0].
+
+parse_headers(Input, Headers) :-
+    rfc2822.parse_fields(Input, Headers).
+
+search_field(Headers, SearchName, Body) :-
+    string.to_lower(SearchName, SearchNameLower),
+    assoc_list.search(Headers, SearchNameLower, Body).
+
+search_parameter(Params, SearchName, Value) :-
+    string.to_lower(SearchName, SearchNameLower),
+    map.search(Params, SearchNameLower, Value).
 
 %-----------------------------------------------------------------------------%
 
-parse_header_value(Value, FirstWord, Params) :-
-    Words = map(strip, split_at_char(';', Value)),
+get_content_type(Headers, media_type(MediaType), Params) :-
     (
-        Words = [],
-        unexpected($module, $pred, "empty list")
-    ;
-        Words = [FirstWord | Params]
-    ).
-
-%-----------------------------------------------------------------------------%
-
-    % Parameter names are case-insensitive.
-    %
-search_parameter([Param | Params], SearchName, Value) :-
-    (
-        string.sub_string_search(Param, "=", EqualsPos),
-        string.unsafe_between(Param, 0, EqualsPos, Name),
-        % XXX linear whitespace is possible before the equals.
-        string_equal_ci(Name, SearchName)
+        search_field(Headers, content_type, Body),
+        parse_structured_field_body(Body, content_type_body, Output)
     ->
-        string.unsafe_between(Param, EqualsPos + 1, count_code_units(Param),
-            Value0),
-        % Linear whitespace is possible after the equals.
-        Value1 = lstrip(Value0),
-        strip_quotes(Value1, Value)
+        Output = MediaType - Params
     ;
-        search_parameter(Params, SearchName, Value)
+        content_type_defaults(MediaType, Params)
     ).
 
-    % XXX parse properly handling escapes, e.g. \"
-    %
-:- pred strip_quotes(string::in, string::out) is det.
+:- func content_type = string.
 
-strip_quotes(S0, S) :-
-    End = count_code_units(S0),
-    (
-        string.unsafe_index_next(S0, 0, Pos1, '"'),
-        string.unsafe_prev_index(S0, End, Pos2, '"'),
-        Pos1 =< Pos2
-    ->
-        string.unsafe_between(S0, Pos1, Pos2, S)
-    ;
-        S = S0
-    ).
-
-%-----------------------------------------------------------------------------%
-
-search_content_disposition(Headers, ContentDisposition, Params) :-
-    search_header(Headers, content_disposition_header, Value),
-    parse_header_value(Value, ContentDisposition, Params).
-
-:- func content_disposition_header = string.
-
-content_disposition_header = "Content-Disposition".
-
-%-----------------------------------------------------------------------------%
-
-get_content_type(Headers, MediaType, Params) :-
-    ( search_header(Headers, content_type_header, Value) ->
-        parse_header_value(Value, MediaTypeString, Params),
-        MediaType = media_type(MediaTypeString)
-    ;
-        MediaType = text_plain, % default
-        Params = []
-    ).
-
-:- func content_type_header = string.
-
-content_type_header = "Content-Type".
-
-:- func text_plain = media_type.
-
-text_plain = media_type("text/plain").
-
-%-----------------------------------------------------------------------------%
+content_type = "Content-Type".
 
 media_type_equals(media_type(A), B) :-
-    string_equal_ci(A, B).
-
-:- pred string_equal_ci(string::in, string::in) is semidet.
-
-string_equal_ci(A, B) :-
-    string.to_lower(A, Lower),
-    string.to_lower(B, Lower).
+    A = string.to_lower(B).
 
 %-----------------------------------------------------------------------------%
 
-search_multipart_formdata_boundary(Headers, Boundary) :-
-    get_content_type(Headers, MediaType, Params),
-    media_type_equals(MediaType, multipart_formdata),
-    search_parameter(Params, boundary, Boundary).
-
-:- func multipart_formdata = string.
-
-multipart_formdata = "multipart/form-data".
+is_multipart_content_type(Headers, Res) :-
+    (
+        get_content_type(Headers, MediaType, Params),
+        is_multipart_type(MediaType)
+    ->
+        (
+            search_parameter(Params, boundary, BoundaryPrime),
+            is_valid_boundary(BoundaryPrime)
+        ->
+            Boundary = BoundaryPrime,
+            ( search_content_transfer_encoding(Headers, CTE) ->
+                ( is_valid_content_transfer_encoding_for_multipart(CTE) ->
+                    Res = multipart(MediaType, Boundary)
+                ;
+                    Res = error("bad content-transfer-encoding for multipart")
+                )
+            ;
+                % Missing Content-Transfer-Encoding is okay.
+                % XXX what about malformed?
+                Res = multipart(MediaType, Boundary)
+            )
+        ;
+            Res = error("missing multipart boundary, or syntax error")
+        )
+    ;
+        Res = not_multipart
+    ).
 
 :- func boundary = string.
 
 boundary = "boundary".
 
+:- pred is_multipart_type(media_type::in) is semidet.
+
+is_multipart_type(media_type(MediaType)) :-
+    string.prefix(MediaType, "multipart/").
+
 %-----------------------------------------------------------------------------%
 
-search_content_transfer_encoding(Headers, CTE) :-
-    search_header(Headers, content_transfer_encoding, CTE).
+search_content_transfer_encoding(Headers, Mechanism) :-
+    search_field(Headers, content_transfer_encoding, Body),
+    parse_structured_field_body(Body, content_transfer_encoding_body,
+        Mechanism).
 
 :- func content_transfer_encoding = string.
 
 content_transfer_encoding = "Content-Transfer-Encoding".
+
+%-----------------------------------------------------------------------------%
+
+search_content_disposition(Headers, DispositionType, Params) :-
+    search_field(Headers, content_disposition_header, Body),
+    parse_structured_field_body(Body, content_disposition_body,
+        DispositionType - Params).
+
+:- func content_disposition_header = string.
+
+content_disposition_header = "Content-Disposition".
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

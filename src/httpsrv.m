@@ -10,6 +10,8 @@
 :- import_module list.
 :- import_module maybe.
 
+:- import_module mime_headers.
+
 %-----------------------------------------------------------------------------%
 
 :- type daemon.
@@ -27,7 +29,7 @@
     --->    request(
                 method  :: method,
                 url     :: string,
-                headers :: assoc_list(string, string),
+                headers :: headers,
                 body    :: content
             ).
 
@@ -83,7 +85,6 @@
 :- import_module buffer.
 :- import_module form_urlencoded.
 :- import_module http_date.
-:- import_module mime_headers.
 :- import_module multipart_parser.
 
 :- include_module httpsrv.formdata_accum.
@@ -185,7 +186,7 @@ set_response(Client, Content, !IO) :-
     ResponseList = [
         "HTTP/1.1 200 OK\r\n",
         "Date: ", HttpDate, "\r\n",
-        % "Content-Type: text/plain\r\n",
+        "Content-Type: text/plain; charset=utf-8\r\n",
         "Content-Length: ", from_int(sum_length(Content)), "\r\n",
         MaybeConnectionClose,
         "\r\n"
@@ -218,7 +219,7 @@ sum_length(Xs) = foldl(plus, map(length, Xs), 0).
 
 :- pragma foreign_export("C", request_init = out, "request_init").
 
-request_init = request(other(""), "", [], none).
+request_init = request(other(""), "", init_headers, none).
 
 :- func request_set_method(request, string) = request.
 
@@ -254,9 +255,9 @@ request_set_url(Req, Url) = Req ^ url := Url.
 :- pragma foreign_export("C", request_add_header(in, in, in) = out,
     "request_add_header").
 
-request_add_header(Req0, Field, Value) = Req :-
+request_add_header(Req0, Name, Body) = Req :-
     Req0 ^ headers = Headers0,
-    Headers = [Field - Value | Headers0],
+    add_header(Name, Body, Headers0, Headers),
     Req = Req0 ^ headers := Headers.
 
 :- func request_get_expect_header(request) = int.
@@ -265,21 +266,16 @@ request_add_header(Req0, Field, Value) = Req :-
     "request_get_expect_header").
 
 request_get_expect_header(Req) = Result :-
-    get_expect_header(Req ^ headers, 0, Result).
-
-:- pred get_expect_header(assoc_list(string, string)::in, int::in, int::out)
-    is det.
-
-get_expect_header([], Acc, Acc).
-get_expect_header([Field - Value | Tail], Acc0, Acc) :-
-    ( string_equal_ci(Field, "Expect") ->
-        ( string_equal_ci(Value, "100-continue") ->
-            get_expect_header(Tail, 1, Acc)
+    Headers = Req ^ headers,
+    ( search_field(Headers, "Expect", Body) ->
+        % XXX strictly speaking, should be a token
+        ( string_equal_ci(Body, "100-continue") ->
+            Result = 1
         ;
-            Acc = -1
+            Result = -1
         )
     ;
-        get_expect_header(Tail, Acc0, Acc)
+        Result = 0
     ).
 
 :- func request_set_body_stringish(request, string) = request.
@@ -288,7 +284,7 @@ get_expect_header([Field - Value | Tail], Acc0, Acc) :-
     "request_set_body_stringish").
 
 request_set_body_stringish(Req0, String) = Req :-
-    Headers = wrap(Req0 ^ headers),
+    Headers = Req0 ^ headers,
     (
         get_content_type(Headers, MediaType, _Params),
         media_type_equals(MediaType, application_x_www_form_urlencoded),
@@ -312,8 +308,15 @@ application_x_www_form_urlencoded = "application/x-www-form-urlencoded".
     "request_search_multipart_formdata_boundary").
 
 request_search_multipart_formdata_boundary(Req, Boundary) :-
-    Headers = wrap(Req ^ headers),
-    search_multipart_formdata_boundary(Headers, Boundary).
+    Headers = Req ^ headers,
+    % XXX report errors, reject other multipart types
+    is_multipart_content_type(Headers, MaybeMultiPart),
+    MaybeMultiPart = multipart(MediaType, Boundary),
+    media_type_equals(MediaType, multipart_formdata).
+
+:- func multipart_formdata = string.
+
+multipart_formdata = "multipart/form-data".
 
 :- func create_formdata_parser(string) = multipart_parser(formdata_accum).
 

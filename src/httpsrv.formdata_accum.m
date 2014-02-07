@@ -88,7 +88,7 @@ on_headers_complete(Headers, Res, !Acc) :-
 
         Res = ok
     ;
-        Res = error("content disposition for part must be form-data")
+        Res = error("content disposition is not form-data or failed to parse")
     ).
 
 :- pred on_body_chunk(c_pointer::in, int::in,
