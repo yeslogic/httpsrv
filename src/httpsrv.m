@@ -268,7 +268,10 @@ request_add_header(Req0, Name, Body) = Req :-
 request_get_expect_header(Req) = Result :-
     Headers = Req ^ headers,
     ( search_field(Headers, "Expect", Body) ->
-        % XXX strictly speaking, should be a token
+        % Strictly speaking the expectation value can be a comma separated list
+        % and "100-continue" is one of the possible elements of that list.
+        % But at least HTTP field values may NOT have comments unless
+        % specifically stated (unlike RFC 822).
         ( string_equal_ci(Body, "100-continue") ->
             Result = 1
         ;
