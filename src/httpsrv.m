@@ -69,7 +69,8 @@
 
 :- pred run(daemon::in, io::di, io::uo) is det.
 
-:- pred set_response(client::in, list(string)::in, io::di, io::uo) is det.
+:- pred set_response(client::in, request::in, list(string)::in, io::di, io::uo)
+    is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -172,7 +173,7 @@ find([T | Ts], P, Default) =
 %-----------------------------------------------------------------------------%
 
     % XXX support other types of responses
-set_response(Client, Content, !IO) :-
+set_response(Client, Request, Content, !IO) :-
     time(Time, !IO),
     HttpDate = timestamp_to_http_date(Time),
     KeepAlive = client_should_keep_alive(Client),
@@ -183,6 +184,11 @@ set_response(Client, Content, !IO) :-
         KeepAlive = no,
         MaybeConnectionClose = "Connection: close\r\n"
     ),
+    ( skip_body(Request) ->
+        MaybeContent = []
+    ;
+        MaybeContent = Content
+    ),
     ResponseList = [
         "HTTP/1.1 200 OK\r\n",
         "Date: ", HttpDate, "\r\n",
@@ -190,7 +196,7 @@ set_response(Client, Content, !IO) :-
         "Content-Length: ", from_int(sum_length(Content)), "\r\n",
         MaybeConnectionClose,
         "\r\n"
-        | Content
+        | MaybeContent
     ],
     set_response_2(Client, ResponseList, length(ResponseList), !IO).
 
@@ -206,6 +212,11 @@ set_response(Client, Content, !IO) :-
     set_response_bufs(Client, ResponseList, ResponseListLength);
     send_async(Client);
 ").
+
+:- pred skip_body(request::in) is semidet.
+
+skip_body(Request) :-
+    Request ^ method = head.
 
 :- func sum_length(list(string)) = int.
 

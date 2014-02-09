@@ -61,7 +61,7 @@ real_handler(Client, Request, !IO) :-
         "Headers: ", string(Headers), "\n",
         "Body: ", string(Body), "\n"
     ],
-    set_response(Client, Content, !IO),
+    set_response(Client, Request, Content, !IO),
     cc_multi_equal(!IO).
 
 :- pred usleep(int::in, io::di, io::uo) is det.
