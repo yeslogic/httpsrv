@@ -17,7 +17,10 @@
 :- import_module parsing_utils.
 :- import_module unit.
 
+:- import_module percent_decoding.
 :- import_module rfc_parsing_utils.
+
+%-----------------------------------------------------------------------------%
 
 :- pragma foreign_decl("C", local, "
     #include ""http_parser.h""
@@ -93,11 +96,12 @@ parse_url(Input, Url) :-
         MaybeField('UF_SCHEMA', MaybeSchema),
         MaybeField('UF_HOST', MaybeHost),
         MaybeField('UF_PORT', MaybePort),
-        MaybeField('UF_PATH', MaybePath),
+        MaybeField('UF_PATH', MaybePathRaw),
         MaybeField('UF_QUERY', MaybeQuery),
         MaybeField('UF_FRAGMENT', MaybeFragment),
-        Url = url(MaybeSchema, MaybeHost, MaybePort, MaybePath, MaybeQuery,
-            MaybeFragment)
+        maybe_decode_path(MaybePathRaw, MaybePathDecoded),
+        Url = url(MaybeSchema, MaybeHost, MaybePort, MaybePathRaw,
+            MaybePathDecoded, MaybeQuery, MaybeFragment)
     ).
 
 :- pred parse_url_2(string::in, parse_url_result::out) is semidet.
@@ -138,6 +142,18 @@ maybe_field(Input, ParseResult, Field, MaybeString) :-
         Str = MR_make_string_const("""");
     }
 ").
+
+:- pred maybe_decode_path(maybe(string)::in, maybe(string)::out) is det.
+
+maybe_decode_path(MaybePathRaw, MaybePathDecoded) :-
+    (
+        MaybePathRaw = yes(PathRaw),
+        percent_decode(PathRaw, PathDecoded)
+    ->
+        MaybePathDecoded = yes(PathDecoded)
+    ;
+        MaybePathDecoded = no
+    ).
 
 %-----------------------------------------------------------------------------%
 

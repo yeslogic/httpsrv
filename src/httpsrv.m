@@ -48,6 +48,7 @@
                 host        :: maybe(string),
                 port        :: maybe(string),
                 path_raw    :: maybe(string),
+                path_decoded:: maybe(string), % percent decoded
                 query_raw   :: maybe(string),
                 fragment    :: maybe(string)
             ).
@@ -247,7 +248,7 @@ request_init = request(other(""), "", url_init, init_headers, none).
 
 :- func url_init = url.
 
-url_init = url(no, no, no, no, no, no).
+url_init = url(no, no, no, no, no, no, no).
 
 :- func request_set_method(request, string) = request.
 
