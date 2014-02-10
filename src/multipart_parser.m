@@ -194,7 +194,10 @@ execute(Buf, !BufPos, !PS, !IO) :-
 
 execute(Buf, _BufPos0, BufPos, !PS, !IO) :-
     !.PS ^ state = after_final_part,
-    % Just consume the rest.
+    % Just consume the rest.  However, note that:
+    % [RFC 2616] Unlike in RFC 2046, the epilogue of any multipart message MUST
+    % be empty; HTTP applications MUST NOT transmit the epilogue (even if the
+    % original multipart contains an epilogue).
     buffer.length(Buf, BufLen, !IO),
     BufPos = BufLen.
 
