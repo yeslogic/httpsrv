@@ -508,7 +508,17 @@ client_on_headers_complete(http_parser *parser)
     /* Pick up the URL. */
     url = buffer_to_string(&client->request_acc.url_buf);
     buffer_clear(&client->request_acc.url_buf);
-    client->request = request_set_url(client->request, url);
+    if (request_set_url_string(url, client->request, &client->request)
+        == MR_FALSE)
+    {
+        LOG("[%d:%d] request_set_url_string failed\n",
+            client->id, client->request_count, url);
+        /*
+        ** XXX Servers must report a 400 (Bad Request) error if an HTTP/1.1
+        ** request does not include a Host request-header
+        */
+        return -1;
+    }
 
     client->should_keep_alive = http_should_keep_alive(parser);
     client->deferred_on_message_complete = false;

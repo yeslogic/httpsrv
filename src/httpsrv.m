@@ -27,10 +27,11 @@
 
 :- type request
     --->    request(
-                method  :: method,
-                url     :: string,
-                headers :: headers,
-                body    :: content
+                method      :: method,
+                url_raw     :: string, % mainly for debugging
+                url         :: url,
+                headers     :: headers,
+                body        :: content
             ).
 
 :- type method
@@ -40,6 +41,16 @@
     ;       post
     ;       put
     ;       other(string).
+
+:- type url
+    --->    url(
+                schema      :: maybe(string),
+                host        :: maybe(string),
+                port        :: maybe(string),
+                path_raw    :: maybe(string),
+                query_raw   :: maybe(string),
+                fragment    :: maybe(string)
+            ).
 
 :- type content
     --->    none
@@ -89,7 +100,9 @@
 :- import_module multipart_parser.
 
 :- include_module httpsrv.formdata_accum.
+:- include_module httpsrv.parse_url.
 :- import_module httpsrv.formdata_accum.
+:- import_module httpsrv.parse_url.
 
 %-----------------------------------------------------------------------------%
 
@@ -230,7 +243,11 @@ sum_length(Xs) = foldl(plus, map(length, Xs), 0).
 
 :- pragma foreign_export("C", request_init = out, "request_init").
 
-request_init = request(other(""), "", init_headers, none).
+request_init = request(other(""), "", url_init, init_headers, none).
+
+:- func url_init = url.
+
+url_init = url(no, no, no, no, no, no).
 
 :- func request_set_method(request, string) = request.
 
@@ -254,12 +271,22 @@ method("HEAD", head).
 method("POST", post).
 method("PUT", put).
 
-:- func request_set_url(request, string) = request.
+:- pred request_set_url_string(string::in, request::in, request::out)
+    is semidet.
 
-:- pragma foreign_export("C", request_set_url(in, in) = out,
-    "request_set_url").
+:- pragma foreign_export("C", request_set_url_string(in, in, out),
+    "request_set_url_string").
 
-request_set_url(Req, Url) = Req ^ url := Url.
+request_set_url_string(UrlString, !Req) :-
+    !Req ^ url_raw := UrlString,
+    ( UrlString = "*" ->
+        % Request applies to the server and not a resource.
+        % Maybe we could add an option for this.
+        true
+    ;
+        parse_url_and_host_header(!.Req ^ headers, UrlString, Url),
+        !Req ^ url := Url
+    ).
 
 :- func request_add_header(request, string, string) = request.
 

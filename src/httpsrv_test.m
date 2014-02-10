@@ -57,7 +57,7 @@ real_handler(Client, Request, !IO) :-
     Body = Request ^ body,
     Content = [
         "Method: ", string(Method), "\n",
-        "URL: ", Url, "\n",
+        "URL: ", string(Url), "\n",
         "Headers: ", string(Headers), "\n",
         "Body: ", string(Body), "\n"
     ],

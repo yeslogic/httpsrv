@@ -7,6 +7,8 @@ MCFLAGS += --no-ansi-c
 MCFLAGS += --c-include-dir ../src
 MCFLAGS-httpsrv += --c-include-dir $(EXTERNALS_DIR)/libuv/include
 MCFLAGS-httpsrv += --c-include-dir $(EXTERNALS_DIR)/http-parser
+MCFLAGS-httpsrv.parse_url += --c-include-dir $(EXTERNALS_DIR)/http-parser
+
 CFLAGS-multipart_parser += -D_GNU_SOURCE
 
 MLOBJS-httpsrv_test += $(EXTERNALS_DIR)/libuv/libuv.a
