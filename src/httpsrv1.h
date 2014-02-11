@@ -168,6 +168,9 @@ static void
 client_on_close_2(uv_handle_t *handle);
 
 static void
+client_on_close_3(uv_handle_t *handle);
+
+static void
 set_response_bufs(client_t *client,
     MR_Word response_list, MR_Integer response_list_length,
     MR_Integer response_file_fd, MR_Integer response_file_size);

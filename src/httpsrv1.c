@@ -69,6 +69,12 @@ handle_from_async(uv_async_t *x)
     return (uv_handle_t *) x;
 }
 
+static uv_handle_t *
+handle_from_timer(uv_timer_t *x)
+{
+    return (uv_handle_t *) x;
+}
+
 static uv_tcp_t *
 tcp_from_handle_checked(uv_handle_t *handle)
 {
@@ -969,18 +975,17 @@ client_close(client_t *client)
 
     client_disable_read_and_stop_timer(client);
 
-    uv_close(handle_from_async(&client->async), client_on_close_1);
+    uv_close(handle_from_timer(&client->timer), client_on_close_1);
 }
 
 static void
 client_on_close_1(uv_handle_t *handle)
 {
-    uv_async_t *async = async_from_handle_checked(handle);
-    client_t *client = client_from_async_data(async);
+    client_t *client = client_from_handle_data(handle);
 
     LOG("[%d:%d] on_close_1\n", client->id, client->request_count);
 
-    uv_close(handle_from_stream(client_tcp_stream(client)), client_on_close_2);
+    uv_close(handle_from_async(&client->async), client_on_close_2);
 }
 
 static void
@@ -990,9 +995,22 @@ client_on_close_2(uv_handle_t *handle)
 
     LOG("[%d:%d] on_close_2\n", client->id, client->request_count);
 
+    uv_close(handle_from_stream(client_tcp_stream(client)), client_on_close_3);
+}
+
+static void
+client_on_close_3(uv_handle_t *handle)
+{
+    client_t *client = client_from_handle_data(handle);
+    uv_loop_t *loop = client->daemon->loop;
+
+    LOG("[%d:%d] on_close_3\n", client->id, client->request_count);
+
     assert(!uv_is_active(handle_from_async(&client->async)));
 
     MR_GC_free(client); /* allocated uncollectable */
+
+    /* uv_print_all_handles(loop); */
 }
 
 /*
