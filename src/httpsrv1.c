@@ -75,6 +75,12 @@ handle_from_timer(uv_timer_t *x)
     return (uv_handle_t *) x;
 }
 
+static uv_handle_t *
+handle_from_signal(uv_signal_t *x)
+{
+    return (uv_handle_t *) x;
+}
+
 static uv_tcp_t *
 tcp_from_handle_checked(uv_handle_t *handle)
 {
@@ -99,6 +105,14 @@ daemon_from_handle_data(uv_handle_t *x)
 
 static daemon_t *
 daemon_from_stream_data(uv_stream_t *x)
+{
+    daemon_t *daemon = x->data;
+    assert(daemon && daemon->magic == DAEMON_MAGIC);
+    return daemon;
+}
+
+static daemon_t *
+daemon_from_signal_data(uv_signal_t *x)
 {
     daemon_t *daemon = x->data;
     assert(daemon && daemon->magic == DAEMON_MAGIC);
@@ -187,10 +201,19 @@ daemon_setup(MR_Word request_handler,
     memset(daemon, 0, sizeof(daemon_t));
 
     daemon->magic = DAEMON_MAGIC;
+    daemon->state = DAEMON_STARTING;
     daemon->loop = uv_loop_new();
 
-    r = uv_tcp_init(daemon->loop, &daemon->server);
+    daemon->signal1.data = daemon; /* for daemon_cleanup */
+    daemon->signal2.data = daemon; /* for daemon_cleanup */
     daemon->server.data = daemon; /* for daemon_cleanup */
+
+    uv_signal_init(daemon->loop, &daemon->signal1);
+    uv_signal_init(daemon->loop, &daemon->signal2);
+    uv_signal_start(&daemon->signal1, daemon_on_signal, SIGINT);
+    uv_signal_start(&daemon->signal2, daemon_on_signal, SIGTERM);
+
+    r = uv_tcp_init(daemon->loop, &daemon->server);
     if (r != 0) {
         LOG("[srv] tcp init error=%d\n", r);
         daemon_cleanup(daemon);
@@ -222,6 +245,8 @@ daemon_setup(MR_Word request_handler,
         return NULL;
     }
 
+    daemon->state = DAEMON_RUNNING;
+
     return daemon;
 }
 
@@ -230,8 +255,16 @@ daemon_cleanup(daemon_t *daemon)
 {
     LOG("[srv] cleanup\n");
 
-    uv_close(handle_from_tcp(&daemon->server), NULL);
+    uv_close(handle_from_signal(&daemon->signal1), NULL);
+    uv_close(handle_from_signal(&daemon->signal2), NULL);
+    if (daemon->state != DAEMON_STOPPING) {
+        uv_close(handle_from_tcp(&daemon->server), NULL);
+    }
+
     uv_run(daemon->loop, UV_RUN_DEFAULT);
+
+    /* uv_print_all_handles(daemon->loop); */
+
     uv_loop_delete(daemon->loop);
 
     MR_GC_free(daemon);
@@ -295,6 +328,22 @@ make_client(daemon_t *daemon)
 /*
 ** Callbacks
 */
+
+static void
+daemon_on_signal(uv_signal_t *signal, int status)
+{
+    daemon_t *daemon = daemon_from_signal_data(signal);
+
+    LOG("[srv] received signal %d\n", signal->signum);
+
+    if (daemon->state == DAEMON_RUNNING) {
+        daemon->state = DAEMON_STOPPING;
+        uv_close(handle_from_tcp(&daemon->server), NULL);
+        /* Unref signal handles so they do not prevent the loop finishing. */
+        uv_unref(handle_from_signal(&daemon->signal1));
+        uv_unref(handle_from_signal(&daemon->signal2));
+    }
+}
 
 static void
 server_on_connect(uv_stream_t *server_handle, int status)

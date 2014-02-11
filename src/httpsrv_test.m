@@ -35,7 +35,8 @@ main(!IO) :-
         Res = ok(Daemon),
         io.format("Started server on %s port %d\n",
             [s(BindAddress), i(Port)], !IO),
-        run(Daemon, !IO)
+        run(Daemon, !IO),
+        io.write_string("Server stopped.\n", !IO)
     ;
         Res = error(Error),
         io.format(io.stderr_stream, "setup failed: %s\n", [s(Error)], !IO),

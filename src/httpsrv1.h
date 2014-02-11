@@ -8,9 +8,18 @@
 
 #include <stdbool.h>
 
+enum daemon_state {
+    DAEMON_STARTING = 1,
+    DAEMON_RUNNING,
+    DAEMON_STOPPING
+};
+
 struct daemon {
     unsigned magic;             /* DAEMON_MAGIC */
+    enum daemon_state state;
     uv_loop_t *loop;
+    uv_signal_t signal1;
+    uv_signal_t signal2;
     uv_tcp_t server;
     http_parser_settings parser_settings;
     MR_Word request_handler;
@@ -73,6 +82,9 @@ daemon_setup(MR_Word request_handler,
 
 static void
 daemon_cleanup(daemon_t *daemon);
+
+static void
+daemon_on_signal(uv_signal_t *signal, int status);
 
 static void
 server_on_connect(uv_stream_t *server_handle, int status);

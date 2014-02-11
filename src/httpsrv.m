@@ -197,6 +197,7 @@ find([T | Ts], P, Default) =
         may_not_duplicate],
 "
     uv_run(Daemon->loop, UV_RUN_DEFAULT);
+    daemon_cleanup(Daemon);
 ").
 
 %-----------------------------------------------------------------------------%
