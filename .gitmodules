@@ -1,3 +1,6 @@
 [submodule "externals/libuv"]
 	path = externals/libuv
 	url = https://github.com/joyent/libuv.git
+[submodule "externals/http-parser"]
+	path = externals/http-parser
+	url = https://github.com/joyent/http-parser.git
