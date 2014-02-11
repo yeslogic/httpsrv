@@ -23,7 +23,7 @@ enum last_header_cb {
     WAS_HEADER_VALUE
 };
 
-enum response_state {
+enum client_state {
     IDLE,
     PREPARING_RESPONSE,
     WRITING_100_CONTINUE,
@@ -41,6 +41,11 @@ struct client {
     uv_timer_t timer;
     http_parser parser;
 
+    enum client_state state;
+    bool should_keep_alive;
+    bool deferred_on_message_complete;
+    MR_Word request;
+
     buffer_t read_buf;
     struct {
         buffer_t url_buf;
@@ -50,13 +55,13 @@ struct client {
         buffer_t body_buf;
         MR_Word multipart_parser; /* 0 or pointer */
     } request_acc;
-    MR_Word request;
-    bool should_keep_alive;
 
-    bool deferred_on_message_complete;
-    enum response_state response_state;
-    uv_buf_t *response_bufs;    /* NULL or array */
-    unsigned int response_bufs_length;
+    uv_buf_t *response_bufs; /* NULL or array */
+    size_t response_bufs_length;
+    uv_file response_file; /* -1 for none */
+    size_t response_file_size;
+    uv_fs_t response_file_req;
+    buffer_t response_file_buf;
     uv_write_t write_req;
 };
 
@@ -130,7 +135,25 @@ static void
 client_on_async(uv_async_t *async, int status);
 
 static void
-client_after_write(uv_write_t *req, int status);
+client_after_write_response_bufs(uv_write_t *req, int status);
+
+static void
+client_start_response_file(client_t *client);
+
+static void
+client_on_read_response_file_buf(uv_fs_t *req);
+
+static void
+client_after_write_response_file_buf(uv_write_t *req, int status);
+
+static void
+client_after_response_file(client_t *client, int status);
+
+static void
+client_close_response_file(client_t *client);
+
+static void
+client_after_full_response(client_t *client, int status);
 
 static void
 client_on_keepalive_timeout(uv_timer_t *timer, int status);
@@ -146,7 +169,8 @@ client_on_close_2(uv_handle_t *handle);
 
 static void
 set_response_bufs(client_t *client,
-    MR_Word response_list, MR_Integer response_list_length);
+    MR_Word response_list, MR_Integer response_list_length,
+    MR_Integer response_file_fd, MR_Integer response_file_size);
 
 static void
 send_async(client_t *client);

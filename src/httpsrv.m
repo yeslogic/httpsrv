@@ -81,8 +81,17 @@
 
 :- pred run(daemon::in, io::di, io::uo) is det.
 
-:- pred set_response(client::in, request::in, list(string)::in, io::di, io::uo)
-    is det.
+:- type response_content
+    --->    strings(list(string))
+    ;       file(static_file).
+
+:- pred set_response(client::in, request::in, response_content::in,
+    io::di, io::uo) is det.
+
+:- type static_file.
+
+:- pred open_static_file(string::in, maybe_error(static_file)::out,
+    io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -128,6 +137,12 @@
 ").
 
 :- type formdata_content == list(buffer).
+
+:- type static_file
+    --->    static_file(
+                fd          :: int,
+                file_size   :: int
+            ).
 
 %-----------------------------------------------------------------------------%
 
@@ -198,32 +213,51 @@ set_response(Client, Request, Content, !IO) :-
         KeepAlive = no,
         MaybeConnectionClose = "Connection: close\r\n"
     ),
-    ( skip_body(Request) ->
-        MaybeContent = []
+    (
+        Content = strings(ContentStrings),
+        ContentLength = sum_length(ContentStrings),
+        ( skip_body(Request) ->
+            Body = []
+        ;
+            Body = ContentStrings
+        ),
+        FileFd = -1,
+        FileSize = 0
     ;
-        MaybeContent = Content
+        Content = file(StaticFile),
+        ContentLength = StaticFile ^ file_size,
+        Body = [],
+        ( skip_body(Request) ->
+            close_static_file(StaticFile, !IO),
+            FileFd = -1,
+            FileSize = 0
+        ;
+            StaticFile = static_file(FileFd, FileSize)
+        )
     ),
     ResponseList = [
         "HTTP/1.1 200 OK\r\n",
         "Date: ", HttpDate, "\r\n",
         "Content-Type: text/plain; charset=utf-8\r\n",
-        "Content-Length: ", from_int(sum_length(Content)), "\r\n",
+        "Content-Length: ", from_int(ContentLength), "\r\n",
         MaybeConnectionClose,
         "\r\n"
-        | MaybeContent
+        | Body
     ],
-    set_response_2(Client, ResponseList, length(ResponseList), !IO).
+    set_response_2(Client, ResponseList, length(ResponseList),
+        FileFd, FileSize, !IO).
 
-:- pred set_response_2(client::in, list(string)::in, int::in, io::di, io::uo)
-    is det.
+:- pred set_response_2(client::in, list(string)::in, int::in,
+    int::in, int::in, io::di, io::uo) is det.
 
 :- pragma foreign_proc("C",
     set_response_2(Client::in, ResponseList::in, ResponseListLength::in,
-        _IO0::di, _IO::uo),
+        FileFd::in, FileLength::in, _IO0::di, _IO::uo),
     [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
         may_not_duplicate],
 "
-    set_response_bufs(Client, ResponseList, ResponseListLength);
+    set_response_bufs(Client, ResponseList, ResponseListLength,
+        FileFd, FileLength);
     send_async(Client);
 ").
 
@@ -419,6 +453,61 @@ call_request_handler_pred(Pred, Client, Request, !IO) :-
     [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
 "
     KeepAlive = (Client->should_keep_alive) ? MR_YES : MR_NO;
+").
+
+%-----------------------------------------------------------------------------%
+
+% Static file
+
+open_static_file(Path, Result, !IO) :-
+    open_static_file_2(Path, Fd, Size, Error, !IO),
+    ( Fd < 0 ->
+        Result = error(Error)
+    ;
+        Result = ok(static_file(Fd, Size))
+    ).
+
+:- pred open_static_file_2(string::in, int::out, int::out, string::out,
+    io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    open_static_file_2(Path::in, Fd::out, Size::out, Error::out,
+        _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
+    struct stat st;
+
+    Fd = -1;
+    Size = 0;
+
+    if (stat(Path, &st) < 0) {
+        Error = MR_make_string_const(""stat failed"");
+    } else if (! S_ISREG(st.st_mode)) {
+        Error = MR_make_string_const(""not regular file"");
+    } else {
+        Fd = open(Path, O_RDONLY);
+        if (Fd < 0) {
+            Error = MR_make_string_const(""open failed"");
+        } else {
+            Size = st.st_size;
+        }
+    }
+").
+
+:- pred close_static_file(static_file::in, io::di, io::uo) is det.
+
+close_static_file(static_file(Fd, _Size), !IO) :-
+    close_static_file_2(Fd, !IO).
+
+:- pred close_static_file_2(int::in, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    close_static_file_2(Fd::in, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
+    close(Fd);
 ").
 
 %-----------------------------------------------------------------------------%

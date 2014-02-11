@@ -21,7 +21,8 @@ enum {
     /* XXX revisit these */
     READ_START_TIMEOUT  = 5000, /* milliseconds */
     READ_CONT_TIMEOUT   = 5000, /* milliseconds */
-    KEEPALIVE_TIMEOUT   = 5000  /* milliseconds */
+    KEEPALIVE_TIMEOUT   = 5000, /* milliseconds */
+    RESPONSE_FILE_BUFSIZE = 65536 /* bytes */
 };
 
 /*
@@ -144,6 +145,14 @@ client_from_timer_data(uv_timer_t *x)
     return client;
 }
 
+static client_t *
+client_from_fs(uv_fs_t *x)
+{
+    client_t *client = x->data;
+    assert(client && client->magic == CLIENT_MAGIC);
+    return client;
+}
+
 /*
 ** Utilities
 */
@@ -223,19 +232,14 @@ daemon_cleanup(daemon_t *daemon)
 }
 
 /*
-** Callbacks
+** Client
 */
 
-static void
-server_on_connect(uv_stream_t *server_handle, int status)
+static client_t *
+make_client(daemon_t *daemon)
 {
-    daemon_t *daemon = daemon_from_stream_data(server_handle);
+    uv_loop_t *loop = daemon->loop;
     client_t *client;
-    int r;
-
-    LOG("[srv] server_on_connect: status=%d\n", status);
-    if (status != 0)
-        return;
 
     /*
     ** Client structures must be allocated uncollectable as they will be become
@@ -249,9 +253,14 @@ server_on_connect(uv_stream_t *server_handle, int status)
     client->request_count = 0;
     client->daemon = daemon;
 
-    uv_tcp_init(server_handle->loop, &client->tcp);
-    uv_async_init(server_handle->loop, &client->async, client_on_async); 
-    uv_timer_init(server_handle->loop, &client->timer);
+    client->state = IDLE;
+    client->should_keep_alive = false;
+    client->deferred_on_message_complete = false;
+    client->request = request_init();
+
+    uv_tcp_init(loop, &client->tcp);
+    uv_async_init(loop, &client->async, client_on_async); 
+    uv_timer_init(loop, &client->timer);
     http_parser_init(&client->parser, HTTP_REQUEST);
 
     client->tcp.data = client;
@@ -267,13 +276,32 @@ server_on_connect(uv_stream_t *server_handle, int status)
     client->request_acc.last_header_cb = NONE;
     buffer_init(&client->request_acc.body_buf);
     client->request_acc.multipart_parser = 0;
-    client->request = request_init();
-    client->should_keep_alive = false;
-    client->deferred_on_message_complete = false;
 
-    client->response_state = IDLE;
     client->response_bufs = NULL;
     client->response_bufs_length = 0;
+    client->response_file = -1;
+    client->response_file_size = 0;
+    buffer_init(&client->response_file_buf);
+
+    return client;
+}
+
+/*
+** Callbacks
+*/
+
+static void
+server_on_connect(uv_stream_t *server_handle, int status)
+{
+    daemon_t *daemon = daemon_from_stream_data(server_handle);
+    client_t *client;
+    int r;
+
+    LOG("[srv] server_on_connect: status=%d\n", status);
+    if (status != 0)
+        return;
+
+    client = make_client(daemon);
 
     r = uv_accept(server_handle, client_tcp_stream(client));
     if (r != 0) {
@@ -407,6 +435,11 @@ client_on_message_begin(http_parser *parser)
     client->request_count++;
     LOG("[%d:%d] on_message_begin\n", client->id, client->request_count);
 
+    assert(client->state == IDLE);
+    client->should_keep_alive = false;
+    client->deferred_on_message_complete = false;
+    client->request = request_init();
+
     /* Do not clear read_buf; would break pipelining. */
     buffer_clear(&client->request_acc.url_buf);
     buffer_clear(&client->request_acc.header_field_buf);
@@ -414,13 +447,12 @@ client_on_message_begin(http_parser *parser)
     client->request_acc.last_header_cb = NONE;
     buffer_clear(&client->request_acc.body_buf);
     client->request_acc.multipart_parser = 0;
-    client->request = request_init();
-    client->should_keep_alive = false;
-    client->deferred_on_message_complete = false;
 
-    assert(client->response_state == IDLE);
     assert(client->response_bufs == NULL);
     assert(client->response_bufs_length == 0);
+    assert(client->response_file == -1);
+    assert(client->response_file_size == 0);
+    buffer_init(&client->response_file_buf);
 
     return 0;
 }
@@ -609,7 +641,7 @@ client_on_message_complete(http_parser *parser)
     client_t *client = client_from_parser_data(parser);
     MR_String method;
 
-    if (client->response_state != IDLE) {
+    if (client->state != IDLE) {
         /*
         ** This callback may be called after we have started sending the
         ** 100-continue status line but before client_after_write_100_continue.
@@ -639,7 +671,7 @@ client_on_message_complete(http_parser *parser)
     LOG("[%d:%d] on_message_complete: call request handler\n",
         client->id, client->request_count);
 
-    client->response_state = PREPARING_RESPONSE;
+    client->state = PREPARING_RESPONSE;
     call_request_handler_pred(client->daemon->request_handler,
         client, client->request);
 
@@ -650,8 +682,8 @@ static void
 client_write_100_continue(client_t *client)
 {
     static char text[] = "HTTP/1.1 100 Continue\r\n\r\n";
-    static uv_buf_t bufs[1];
-    bufs[0] = uv_buf_init(text, sizeof(text));
+    const int nbufs = 1;
+    uv_buf_t bufs[nbufs];
 
     LOG("[%d:%d] write 100-continue\n",
         client->id, client->request_count);
@@ -660,9 +692,11 @@ client_write_100_continue(client_t *client)
 
     /* XXX set write timeout */
 
-    client->response_state = WRITING_100_CONTINUE;
+    client->state = WRITING_100_CONTINUE;
+
+    bufs[0] = uv_buf_init(text, sizeof(text));
     uv_write(&client->write_req, client_tcp_stream(client),
-        bufs, 1, client_after_write_100_continue);
+        bufs, nbufs, client_after_write_100_continue);
 }
 
 static void
@@ -673,8 +707,8 @@ client_after_write_100_continue(uv_write_t *req, int status)
     LOG("[%d:%d] after write 100-continue: status=%d\n",
         client->id, client->request_count, status);
 
-    assert(client->response_state == WRITING_100_CONTINUE);
-    client->response_state = IDLE;
+    assert(client->state == WRITING_100_CONTINUE);
+    client->state = IDLE;
 
     if (status != 0) {
         client_close(client);
@@ -697,21 +731,22 @@ static void
 client_write_417_expectation_failed(client_t *client)
 {
     static char text[] = "HTTP/1.1 417 Expectation Failed\r\n\r\n";
-    static uv_buf_t bufs[1];
-    bufs[0] = uv_buf_init(text, sizeof(text));
+    const int nbufs = 1;
+    uv_buf_t bufs[nbufs];
 
     LOG("[%d:%d] write 417 Expectation Failed\n",
         client->id, client->request_count);
 
     client_disable_read_and_stop_timer(client);
 
+    client->state = WRITING_RESPONSE;
     client->should_keep_alive = false;
-    client->response_state = WRITING_RESPONSE;
 
     /* XXX set write timeout */
 
+    bufs[0] = uv_buf_init(text, sizeof(text));
     uv_write(&client->write_req, client_tcp_stream(client),
-        bufs, 1, client_after_write);
+        bufs, nbufs, client_after_write_response_bufs);
 }
 
 static void
@@ -744,35 +779,165 @@ client_on_async(uv_async_t *async, int status)
     ** uv_async_send causes the callback to be invoked one or more times;
     ** ignore the second and subsequent invocations.
     */
-    if (client->response_state != PREPARING_RESPONSE) {
+    if (client->state != PREPARING_RESPONSE) {
         LOG("[%d:%d] on_async: ignored due to response_state\n",
             client->id, client->request_count);
         return;
     }
 
-    assert(client->response_bufs);
-
-    client->response_state = WRITING_RESPONSE;
+    client->state = WRITING_RESPONSE;
 
     /* XXX set write timeout */
 
+    /* We hold onto response_bufs while writing to prevent collection. */
+    assert(client->response_bufs != NULL);
+
     uv_write(&client->write_req, client_tcp_stream(client),
         client->response_bufs, client->response_bufs_length,
-        client_after_write);
+        client_after_write_response_bufs);
 }
 
 static void
-client_after_write(uv_write_t *req, int status)
+client_after_write_response_bufs(uv_write_t *req, int status)
 {
     client_t *client = client_from_stream_data(req->handle);
 
-    LOG("[%d:%d] after_write: status=%d\n",
+    LOG("[%d:%d] after_write_response_bufs: status=%d\n",
         client->id, client->request_count, status);
 
-    assert(client->response_state == WRITING_RESPONSE);
-    client->response_state = IDLE;
+    assert(client->state == WRITING_RESPONSE);
+
     client->response_bufs = NULL;
     client->response_bufs_length = 0;
+
+    if (status != 0) {
+        client_close_response_file(client);
+    }
+
+    if (client->response_file != -1) {
+        client_start_response_file(client);
+    } else {
+        client_after_full_response(client, status);
+    }
+}
+
+static void
+client_start_response_file(client_t *client)
+{
+    int r;
+
+    LOG("[%d:%d] start_response_file: fd=%d\n",
+        client->id, client->request_count, client->response_file);
+
+    assert(client->state == WRITING_RESPONSE);
+    assert(client->response_file != -1);
+
+    buffer_reserve(&client->response_file_buf, RESPONSE_FILE_BUFSIZE);
+    client->response_file_req.data = client;
+
+    /* Start reading. */
+    r = uv_fs_read(client->daemon->loop,
+        &client->response_file_req, client->response_file,
+        client->response_file_buf.data, client->response_file_buf.cap, -1,
+        client_on_read_response_file_buf);
+    if (r != 0) {
+        client_after_response_file(client, -1);
+    }
+}
+
+static void
+client_on_read_response_file_buf(uv_fs_t *req)
+{
+    client_t *client = client_from_fs(req);
+    ssize_t nread;
+    const int nbufs = 1;
+    uv_buf_t bufs[nbufs];
+
+    nread = req->result;
+    uv_fs_req_cleanup(req);
+
+    LOG("[%d:%d] on_read_response_file_buf: nread=%d\n",
+        client->id, client->request_count, nread);
+
+    if (nread < 0) {
+        client_after_response_file(client, -1);
+        return;
+    }
+
+    if (nread == 0) { /* EOF */
+        client_after_response_file(client, 0);
+        return;
+    }
+
+    LOG("[%d:%d] write response file buffer\n",
+        client->id, client->request_count, client->response_file);
+
+    bufs[0] = uv_buf_init(client->response_file_buf.data, nread);
+    uv_write(&client->write_req, client_tcp_stream(client),
+        bufs, nbufs, client_after_write_response_file_buf);
+}
+
+static void
+client_after_write_response_file_buf(uv_write_t *req, int status)
+{
+    client_t *client = client_from_stream_data(req->handle);
+    int r;
+
+    LOG("[%d:%d] after_write_response_file_buf: status=%d\n",
+        client->id, client->request_count, status);
+
+    if (status != 0) {
+        client_after_response_file(client, status);
+        return;
+    }
+
+    /* Continue reading. */
+
+    assert(client->response_file_buf.cap > 0);
+
+    r = uv_fs_read(client->daemon->loop,
+        &client->response_file_req, client->response_file,
+        client->response_file_buf.data, client->response_file_buf.cap, -1,
+        client_on_read_response_file_buf);
+    if (r != 0) {
+        client_after_response_file(client, -1);
+    }
+}
+
+static void
+client_after_response_file(client_t *client, int status)
+{
+    LOG("[%d:%d] after_response_file: status=%d\n",
+        client->id, client->request_count, status);
+
+    client_close_response_file(client);
+
+    client_after_full_response(client, status);
+}
+
+static void
+client_close_response_file(client_t *client)
+{
+    uv_fs_t close_req;
+
+    if (client->response_file < 0)
+        return;
+
+    /* Synchronous close (because of null callback). */
+    uv_fs_close(client->daemon->loop, &close_req, client->response_file, NULL);
+    client->response_file = -1;
+    client->response_file_size = 0;
+    buffer_init(&client->response_file_buf);
+}
+
+static void
+client_after_full_response(client_t *client, int status)
+{
+    LOG("[%d:%d] after_full_response: status=%d\n",
+        client->id, client->request_count, status);
+
+    assert(client->state == WRITING_RESPONSE);
+    client->state = IDLE;
 
     if (status != 0 || !client->should_keep_alive) {
         client_close(client);
@@ -836,7 +1001,8 @@ client_on_close_2(uv_handle_t *handle)
 
 static void
 set_response_bufs(client_t *client,
-    MR_Word response_list, MR_Integer response_list_length)
+    MR_Word response_list, MR_Integer response_list_length,
+    MR_Integer response_file, MR_Integer response_file_size)
 {
     uv_buf_t *response_bufs;
     MR_Integer i;
@@ -847,20 +1013,22 @@ set_response_bufs(client_t *client,
         response_list_length);
 
     assert(client->response_bufs == NULL);
-    assert(client->response_bufs_length == 0);
+    assert(client->response_file == -1);
 
     response_bufs = MR_GC_NEW_ARRAY(uv_buf_t, response_list_length);
 
     for (i = 0; i < response_list_length; i++) {
         assert(! MR_list_is_empty(response_list));
         s = (const MR_String) MR_list_head(response_list);
-        response_bufs[i].base = s;
-        response_bufs[i].len = strlen(s);
+        response_bufs[i] = uv_buf_init(s, strlen(s));
         response_list = MR_list_tail(response_list);
     }
 
     client->response_bufs = response_bufs;
     client->response_bufs_length = response_list_length;
+
+    client->response_file = response_file;
+    client->response_file_size = response_file_size;
 }
 
 static void
@@ -871,7 +1039,7 @@ send_async(client_t *client)
     ** Send an async signal which triggers a callback on the main thread.
     */
 
-    assert(client->response_state == PREPARING_RESPONSE);
+    assert(client->state == PREPARING_RESPONSE);
     assert(client->response_bufs != NULL);
 
     uv_async_send(&client->async);

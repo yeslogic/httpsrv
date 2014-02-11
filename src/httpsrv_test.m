@@ -53,16 +53,38 @@ real_handler(Client, Request, !IO) :-
     usleep(100000, !IO),
     Method = Request ^ method,
     Url = Request ^ url,
-    Headers = Request ^ headers,
-    Body = Request ^ body,
-    Content = [
-        "Method: ", string(Method), "\n",
-        "URL: ", string(Url), "\n",
-        "Headers: ", string(Headers), "\n",
-        "Body: ", string(Body), "\n"
-    ],
+    MaybePathDecoded = Url ^ path_decoded,
+    (
+        MaybePathDecoded = yes(PathDecoded),
+        static_path(PathDecoded, FilePath)
+    ->
+        open_static_file(FilePath, OpenResult, !IO),
+        (
+            OpenResult = ok(StaticFile),
+            Content = file(StaticFile)
+        ;
+            OpenResult = error(Error),
+            Content = strings([Error])
+        )
+    ;
+        Headers = Request ^ headers,
+        Body = Request ^ body,
+        Content = strings([
+            "Method: ", string(Method), "\n",
+            "URL: ", string(Url), "\n",
+            "Headers: ", string(Headers), "\n",
+            "Body: ", string(Body), "\n"
+        ])
+    ),
     set_response(Client, Request, Content, !IO),
     cc_multi_equal(!IO).
+
+:- pred static_path(string::in, string::out) is semidet.
+
+static_path(PathDecoded, StaticPath) :-
+    Resource = words_separator(unify('/'), PathDecoded),
+    Resource = ["static" | _],
+    StaticPath = string.join_list("/", Resource).
 
 :- pred usleep(int::in, io::di, io::uo) is det.
 
