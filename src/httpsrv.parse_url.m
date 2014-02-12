@@ -100,8 +100,9 @@ parse_url(Input, Url) :-
         MaybeField('UF_QUERY', MaybeQuery),
         MaybeField('UF_FRAGMENT', MaybeFragment),
         maybe_decode_path(MaybePathRaw, MaybePathDecoded),
+        maybe_decode_query_parameters(MaybeQuery, QueryParams),
         Url = url(MaybeSchema, MaybeHost, MaybePort, MaybePathRaw,
-            MaybePathDecoded, MaybeQuery, MaybeFragment)
+            MaybePathDecoded, MaybeQuery, QueryParams, MaybeFragment)
     ).
 
 :- pred parse_url_2(string::in, parse_url_result::out) is semidet.
@@ -153,6 +154,19 @@ maybe_decode_path(MaybePathRaw, MaybePathDecoded) :-
         MaybePathDecoded = yes(PathDecoded)
     ;
         MaybePathDecoded = no
+    ).
+
+:- pred maybe_decode_query_parameters(maybe(string)::in,
+    assoc_list(string)::out) is det.
+
+maybe_decode_query_parameters(MaybeQuery, Params) :-
+    (
+        MaybeQuery = yes(Query),
+        parse_query_parameters(Query, ParamsPrime)
+    ->
+        Params = ParamsPrime
+    ;
+        Params = []
     ).
 
 %-----------------------------------------------------------------------------%

@@ -1,4 +1,4 @@
-:- module form_urlencoded.
+:- module urlencoding.
 
 % Copyright (C) 2014 YesLogic Pty. Ltd.
 % All rights reserved.
@@ -7,10 +7,18 @@
 
 :- import_module assoc_list.
 
-    % We assume that the current Mercury process uses UTF-8 string encoding,
-    % and only allow UTF-8 keys and values!
+    % Parse the query component of a URI, returning a list of name/value pairs
+    % in order of appearance.
     %
-    % Returns keys in original order.
+    % This code only works in a Mercury process using UTF-8 string encoding.
+    %
+:- pred parse_query_parameters(string::in, assoc_list(string, string)::out)
+    is semidet.
+
+    % Parse an application/x-www-form-urlencoded form submission, returning a
+    % list of name/value pairs in order of appearance.
+    %
+    % This code only works in a Mercury process using UTF-8 string encoding.
     %
 :- pred parse_form_urlencoded(string::in, assoc_list(string, string)::out)
     is semidet.
@@ -42,12 +50,21 @@
 
 %-----------------------------------------------------------------------------%
 
-parse_form_urlencoded(Input, AssocList) :-
+parse_query_parameters(Input, Pairs) :-
     promise_equivalent_solutions [ParseResult] (
         parsing_utils.parse(Input, no_skip_whitespace, all_pairs,
             ParseResult)
     ),
-    ParseResult = ok(AssocList).
+    ParseResult = ok(Pairs).
+
+parse_form_urlencoded(Input, Pairs) :-
+    % By [RFC 3986] URIs handle non-ASCII characters by percent-encoding the
+    % UTF-8 octets - which we handle.
+    %
+    % However, x-www-form-urlencoded allows any ASCII-compatible character set
+    % to be used, and percent-encoding *those* octets.  We make no attempt to
+    % support anything other than UTF-8 yet, hence this call.
+    parse_query_parameters(Input, Pairs).
 
 :- pred no_skip_whitespace(src::in, unit::out, ps::in, ps::out) is semidet.
 

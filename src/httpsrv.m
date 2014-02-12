@@ -54,6 +54,7 @@
                 path_raw    :: maybe(string),
                 path_decoded:: maybe(string), % percent decoded
                 query_raw   :: maybe(string),
+                query_params:: assoc_list(string), % percent decoded
                 fragment    :: maybe(string)
             ).
 
@@ -120,9 +121,9 @@
 :- import_module time.
 
 :- import_module buffer.
-:- import_module form_urlencoded.
 :- import_module http_date.
 :- import_module multipart_parser.
+:- import_module urlencoding.
 
 :- include_module httpsrv.formdata_accum.
 :- include_module httpsrv.parse_url.
@@ -304,7 +305,7 @@ request_init = request(other(""), "", url_init, init_headers, none).
 
 :- func url_init = url.
 
-url_init = url(no, no, no, no, no, no, no).
+url_init = url(no, no, no, no, no, no, [], no).
 
 :- func request_set_method(request, string) = request.
 
