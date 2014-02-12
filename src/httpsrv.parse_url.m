@@ -8,6 +8,10 @@
 :- pred parse_url_and_host_header(headers::in, string::in, url::out)
     is semidet.
 
+:- pred decode_path(url::in, maybe(string)::out) is det.
+
+:- pred decode_query_parameters(url::in, assoc_list(string)::out) is det.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -99,10 +103,8 @@ parse_url(Input, Url) :-
         MaybeField('UF_PATH', MaybePathRaw),
         MaybeField('UF_QUERY', MaybeQuery),
         MaybeField('UF_FRAGMENT', MaybeFragment),
-        maybe_decode_path(MaybePathRaw, MaybePathDecoded),
-        maybe_decode_query_parameters(MaybeQuery, QueryParams),
-        Url = url(MaybeSchema, MaybeHost, MaybePort, MaybePathRaw,
-            MaybePathDecoded, MaybeQuery, QueryParams, MaybeFragment)
+        Url = url(MaybeSchema, MaybeHost, MaybePort, MaybePathRaw, MaybeQuery,
+            MaybeFragment)
     ).
 
 :- pred parse_url_2(string::in, parse_url_result::out) is semidet.
@@ -143,31 +145,6 @@ maybe_field(Input, ParseResult, Field, MaybeString) :-
         Str = MR_make_string_const("""");
     }
 ").
-
-:- pred maybe_decode_path(maybe(string)::in, maybe(string)::out) is det.
-
-maybe_decode_path(MaybePathRaw, MaybePathDecoded) :-
-    (
-        MaybePathRaw = yes(PathRaw),
-        percent_decode(PathRaw, PathDecoded)
-    ->
-        MaybePathDecoded = yes(PathDecoded)
-    ;
-        MaybePathDecoded = no
-    ).
-
-:- pred maybe_decode_query_parameters(maybe(string)::in,
-    assoc_list(string)::out) is det.
-
-maybe_decode_query_parameters(MaybeQuery, Params) :-
-    (
-        MaybeQuery = yes(Query),
-        parse_query_parameters(Query, ParamsPrime)
-    ->
-        Params = ParamsPrime
-    ;
-        Params = []
-    ).
 
 %-----------------------------------------------------------------------------%
 
@@ -254,6 +231,30 @@ port(Src, Port, !PS) :-
 port_to_int(String, Int) :-
     string.to_int(String, Int),
     Int > 0.
+
+%-----------------------------------------------------------------------------%
+
+decode_path(Url, MaybePathDecoded) :-
+    MaybePathRaw = Url ^ path_raw,
+    (
+        MaybePathRaw = yes(PathRaw),
+        percent_decode(PathRaw, PathDecoded)
+    ->
+        MaybePathDecoded = yes(PathDecoded)
+    ;
+        MaybePathDecoded = no
+    ).
+
+decode_query_parameters(Url, Params) :-
+    MaybeQuery = Url ^ query_raw,
+    (
+        MaybeQuery = yes(Query),
+        parse_query_parameters(Query, ParamsPrime)
+    ->
+        Params = ParamsPrime
+    ;
+        Params = []
+    ).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

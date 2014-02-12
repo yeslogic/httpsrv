@@ -34,6 +34,8 @@
                 method      :: method,
                 url_raw     :: string, % mainly for debugging
                 url         :: url,
+                path_decoded:: maybe(string), % percent decoded
+                query_params:: assoc_list(string), % percent decoded
                 headers     :: headers,
                 body        :: content
             ).
@@ -52,9 +54,7 @@
                 host        :: maybe(string),
                 port        :: maybe(string),
                 path_raw    :: maybe(string),
-                path_decoded:: maybe(string), % percent decoded
                 query_raw   :: maybe(string),
-                query_params:: assoc_list(string), % percent decoded
                 fragment    :: maybe(string)
             ).
 
@@ -301,11 +301,11 @@ sum_length(Xs) = foldl(plus, map(length, Xs), 0).
 
 :- pragma foreign_export("C", request_init = out, "request_init").
 
-request_init = request(other(""), "", url_init, init_headers, none).
+request_init = request(other(""), "", url_init, no, [], init_headers, none).
 
 :- func url_init = url.
 
-url_init = url(no, no, no, no, no, no, [], no).
+url_init = url(no, no, no, no, no, no).
 
 :- func request_set_method(request, string) = request.
 
@@ -343,7 +343,13 @@ request_set_url_string(UrlString, !Req) :-
         true
     ;
         parse_url_and_host_header(!.Req ^ headers, UrlString, Url),
-        !Req ^ url := Url
+        require_det (
+            decode_path(Url, MaybePathDecoded),
+            decode_query_parameters(Url, QueryParams),
+            !Req ^ url := Url,
+            !Req ^ path_decoded := MaybePathDecoded,
+            !Req ^ query_params := QueryParams
+        )
     ).
 
 :- func request_add_header(request, string, string) = request.

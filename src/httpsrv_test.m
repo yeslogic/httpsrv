@@ -56,7 +56,8 @@ real_handler(Client, Request, !IO) :-
     usleep(100000, !IO),
     Method = Request ^ method,
     Url = Request ^ url,
-    MaybePathDecoded = Url ^ path_decoded,
+    MaybePathDecoded = Request ^ path_decoded,
+    QueryParams = Request ^ query_params,
     (
         MaybePathDecoded = yes(PathDecoded),
         static_path(PathDecoded, FilePath)
@@ -81,6 +82,8 @@ real_handler(Client, Request, !IO) :-
         Content = strings([
             "Method: ", string(Method), "\n",
             "URL: ", string(Url), "\n",
+            "Path: ", string(MaybePathDecoded), "\n",
+            "Query parameters: ", string(QueryParams), "\n",
             "Headers: ", string(Headers), "\n",
             "Body: ", string(Body), "\n"
         ])
