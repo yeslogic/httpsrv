@@ -11,7 +11,7 @@
 :- import_module maybe.
 :- import_module pair.
 
-:- import_module mime_headers.
+:- import_module headers.
 
 :- include_module httpsrv.status.
 :- import_module httpsrv.status.
@@ -122,6 +122,7 @@
 
 :- import_module buffer.
 :- import_module http_date.
+:- import_module mime_headers.
 :- import_module multipart_parser.
 :- import_module urlencoding.
 

@@ -9,7 +9,7 @@
 :- import_module maybe.
 
 :- import_module buffer.
-:- import_module mime_headers.
+:- import_module headers.
 
 %-----------------------------------------------------------------------------%
 
@@ -43,6 +43,8 @@
 :- import_module int.
 :- import_module require.
 :- import_module string.
+
+:- import_module mime_headers.
 
 :- pragma foreign_decl("C", local, "
     #include <string.h> /* memmem is GNU extension */
@@ -214,7 +216,7 @@ have_header_block(Buf, StartPos, EndPos, !PS, !IO) :-
     make_string_utf8(Buf, StartPos, EndPos, Ok, String, !IO),
     (
         Ok = yes,
-        ( parse_headers(String, Headers) ->
+        ( mime_headers.parse_headers(String, Headers) ->
             have_headers(Headers, !PS)
         ;
             !PS ^ state := error("error parsing headers")

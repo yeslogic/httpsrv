@@ -13,7 +13,7 @@
     %
 :- type field == pair(string, string).
 
-:- pred parse_fields(string::in, list(pair(string, string))::out) is semidet.
+:- pred parse_fields(string::in, list(field)::out) is semidet.
 
 :- pred parse_structured_field_body(string::in, parser(T)::in(parser), T::out)
     is semidet.

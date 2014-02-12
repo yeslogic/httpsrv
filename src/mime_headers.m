@@ -5,9 +5,7 @@
 
 :- interface.
 
-:- type headers.
-
-:- type parameters.
+:- import_module headers.
 
 :- type media_type
     --->    media_type(string). % case-insensitive, stored in lowercase
@@ -17,15 +15,7 @@
     ;       multipart(media_type, string) % second argument is boundary
     ;       error(string).
 
-:- func init_headers = headers.
-
-:- pred add_header(string::in, string::in, headers::in, headers::out) is det.
-
 :- pred parse_headers(string::in, headers::out) is semidet.
-
-:- pred search_field(headers::in, string::in, string::out) is semidet.
-
-:- pred search_parameter(parameters::in, string::in, string::out) is semidet.
 
 :- pred get_content_type(headers::in, media_type::out, parameters::out) is det.
 
@@ -44,9 +34,6 @@
 
 :- implementation.
 
-:- import_module assoc_list.
-:- import_module list.
-:- import_module map.
 :- import_module pair.
 :- import_module string.
 
@@ -69,29 +56,11 @@
 ** NOT [RFC 6266] This relates to HTTP and not the payload.
 */
 
-    % XXX how to handle duplicate fields?
-:- type headers == list(rfc2822.field).
-
-:- type parameters == rfc2045.parameters.
-
 %-----------------------------------------------------------------------------%
 
-init_headers = [].
-
-add_header(Name, Body, Headers0, Headers) :-
-    string.to_lower(Name, NameLower),
-    Headers = [NameLower - Body | Headers0].
-
 parse_headers(Input, Headers) :-
-    rfc2822.parse_fields(Input, Headers).
-
-search_field(Headers, SearchName, Body) :-
-    string.to_lower(SearchName, SearchNameLower),
-    assoc_list.search(Headers, SearchNameLower, Body).
-
-search_parameter(Params, SearchName, Value) :-
-    string.to_lower(SearchName, SearchNameLower),
-    map.search(Params, SearchNameLower, Value).
+    rfc2822.parse_fields(Input, Fields),
+    Headers = init_headers_from_assoc_list(Fields).
 
 %-----------------------------------------------------------------------------%
 
@@ -100,9 +69,11 @@ get_content_type(Headers, media_type(MediaType), Params) :-
         search_field(Headers, content_type, Body),
         parse_structured_field_body(Body, content_type_body, Output)
     ->
-        Output = MediaType - Params
+        Output = MediaType - ParamsMap,
+        Params = init_parameters_from_map(ParamsMap)
     ;
-        content_type_defaults(MediaType, Params)
+        content_type_defaults(MediaType, ParamsMap),
+        Params = init_parameters_from_map(ParamsMap)
     ).
 
 :- func content_type = string.
@@ -167,7 +138,8 @@ content_transfer_encoding = "Content-Transfer-Encoding".
 search_content_disposition(Headers, DispositionType, Params) :-
     search_field(Headers, content_disposition_header, Body),
     parse_structured_field_body(Body, content_disposition_body,
-        DispositionType - Params).
+        DispositionType - ParamsMap),
+    Params = init_parameters_from_map(ParamsMap).
 
 :- func content_disposition_header = string.
 
