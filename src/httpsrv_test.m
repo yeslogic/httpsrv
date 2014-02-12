@@ -20,6 +20,7 @@
 :- import_module thread.
 
 :- import_module httpsrv.
+:- import_module httpsrv.status.
 
 %-----------------------------------------------------------------------------%
 
@@ -63,12 +64,18 @@ real_handler(Client, Request, !IO) :-
         open_static_file(FilePath, OpenResult, !IO),
         (
             OpenResult = ok(StaticFile),
+            Status = ok_200,
+            AdditionalHeaders = [content_type("application/octet-stream")],
             Content = file(StaticFile)
         ;
             OpenResult = error(Error),
+            Status = not_found_404,
+            AdditionalHeaders = [],
             Content = strings([Error])
         )
     ;
+        Status = ok_200,
+        AdditionalHeaders = [],
         Headers = Request ^ headers,
         Body = Request ^ body,
         Content = strings([
@@ -78,7 +85,7 @@ real_handler(Client, Request, !IO) :-
             "Body: ", string(Body), "\n"
         ])
     ),
-    set_response(Client, Request, Content, !IO),
+    set_response(Client, Request, Status, AdditionalHeaders, Content, !IO),
     cc_multi_equal(!IO).
 
 :- pred static_path(string::in, string::out) is semidet.

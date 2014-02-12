@@ -9,8 +9,12 @@
 :- import_module io.
 :- import_module list.
 :- import_module maybe.
+:- import_module pair.
 
 :- import_module mime_headers.
+
+:- include_module httpsrv.status.
+:- import_module httpsrv.status.
 
 %-----------------------------------------------------------------------------%
 
@@ -85,8 +89,19 @@
     --->    strings(list(string))
     ;       file(static_file).
 
-:- pred set_response(client::in, request::in, response_content::in,
-    io::di, io::uo) is det.
+    % NOTE: for now, the user is responsible for any necessary escaping!
+    %
+:- type response_header
+    --->    cache_control_max_age(int)
+    ;       content_type(string)
+    ;       content_type_charset_utf8(string)
+    ;       content_disposition(string)
+    ;       set_cookie(pair(string), assoc_list(string))
+    ;       x_content_type_options_nosniff
+    ;       custom(pair(string), assoc_list(string)).
+
+:- pred set_response(client::in, request::in, status_code::in,
+    list(response_header)::in, response_content::in, io::di, io::uo) is det.
 
 :- type static_file.
 
@@ -99,8 +114,8 @@
 :- implementation.
 
 :- import_module bool.
+:- import_module cord.
 :- import_module int.
-:- import_module pair.
 :- import_module string.
 :- import_module time.
 
@@ -111,8 +126,10 @@
 
 :- include_module httpsrv.formdata_accum.
 :- include_module httpsrv.parse_url.
+:- include_module httpsrv.response.
 :- import_module httpsrv.formdata_accum.
 :- import_module httpsrv.parse_url.
+:- import_module httpsrv.response.
 
 %-----------------------------------------------------------------------------%
 
@@ -202,8 +219,7 @@ find([T | Ts], P, Default) =
 
 %-----------------------------------------------------------------------------%
 
-    % XXX support other types of responses
-set_response(Client, Request, Content, !IO) :-
+set_response(Client, Request, Status, AdditionalHeaders, Content, !IO) :-
     time(Time, !IO),
     HttpDate = timestamp_to_http_date(Time),
     KeepAlive = client_should_keep_alive(Client),
@@ -218,16 +234,16 @@ set_response(Client, Request, Content, !IO) :-
         Content = strings(ContentStrings),
         ContentLength = sum_length(ContentStrings),
         ( skip_body(Request) ->
-            Body = []
+            Body = cord.init
         ;
-            Body = ContentStrings
+            Body = cord.from_list(ContentStrings)
         ),
         FileFd = -1,
         FileSize = 0
     ;
         Content = file(StaticFile),
         ContentLength = StaticFile ^ file_size,
-        Body = [],
+        Body = cord.init,
         ( skip_body(Request) ->
             close_static_file(StaticFile, !IO),
             FileFd = -1,
@@ -236,15 +252,20 @@ set_response(Client, Request, Content, !IO) :-
             StaticFile = static_file(FileFd, FileSize)
         )
     ),
-    ResponseList = [
-        "HTTP/1.1 200 OK\r\n",
-        "Date: ", HttpDate, "\r\n",
-        "Content-Type: text/plain; charset=utf-8\r\n",
+
+    HeaderPre = cord.from_list([
+        "HTTP/1.1 ", text(Status), "\r\n",
+        "Date: ", HttpDate, "\r\n"
+    ]),
+    HeaderMid = list.map(render_response_header, AdditionalHeaders),
+    HeaderPost = cord.from_list([
         "Content-Length: ", from_int(ContentLength), "\r\n",
         MaybeConnectionClose,
         "\r\n"
-        | Body
-    ],
+    ]),
+    ResponseCord = HeaderPre ++ cord_list_to_cord(HeaderMid) ++ HeaderPost ++
+        Body,
+    ResponseList = cord.list(ResponseCord),
     set_response_2(Client, ResponseList, length(ResponseList),
         FileFd, FileSize, !IO).
 
