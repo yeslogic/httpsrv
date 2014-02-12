@@ -33,14 +33,42 @@ render(H) = L :-
         H = content_disposition(DispositionType),
         L = ["Content-Disposition: ", DispositionType]
     ;
-        H = set_cookie(Name - Value, Params),
-        L = ["Set-Cookie: ", Name, "=", Value | render_params(Params)]
+        H = set_cookie(Name - Value, Attrs),
+        L = ["Set-Cookie: ", Name, "=", Value | render_cookie_attrs(Attrs)]
     ;
         H = x_content_type_options_nosniff,
         L = ["X-Content-Type-Options: nosniff"]
     ;
         H = custom(Name - Value, Params),
         L = [Name, ": ", Value | render_params(Params)]
+    ).
+
+:- func render_cookie_attrs(list(cookie_attribute)) = list(string).
+
+render_cookie_attrs(Attrs) = condense(map(render_cookie_attr, Attrs)).
+
+:- func render_cookie_attr(cookie_attribute) = list(string).
+
+render_cookie_attr(Attr) = L :-
+    (
+        Attr = expires(Time),
+        L = ["; Expires=", timestamp_to_http_date(Time)]
+    ;
+        Attr = max_age(MaxAge),
+        % By RFC 6265, this should be strictly positive (not zero).
+        L = ["; MaxAge=", from_int(MaxAge)]
+    ;
+        Attr = domain(Domain),
+        L = ["; Domain=", Domain]
+    ;
+        Attr = path(Path),
+        L = ["; Path=", Path]
+    ;
+        Attr = secure,
+        L = ["; Secure"]
+    ;
+        Attr = httponly,
+        L = ["; HttpOnly"]
     ).
 
 :- func render_params(list(pair(string))) = list(string).

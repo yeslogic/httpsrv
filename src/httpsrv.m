@@ -10,6 +10,7 @@
 :- import_module list.
 :- import_module maybe.
 :- import_module pair.
+:- import_module time.
 
 :- import_module headers.
 
@@ -98,9 +99,17 @@
     ;       content_type(string)
     ;       content_type_charset_utf8(string)
     ;       content_disposition(string)
-    ;       set_cookie(pair(string), assoc_list(string))
+    ;       set_cookie(pair(string), list(cookie_attribute))
     ;       x_content_type_options_nosniff
     ;       custom(pair(string), assoc_list(string)).
+
+:- type cookie_attribute
+    --->    expires(time_t)
+    ;       max_age(int) % strictly positive
+    ;       domain(string)
+    ;       path(string)
+    ;       secure
+    ;       httponly.
 
 :- pred set_response(client::in, request::in, status_code::in,
     list(response_header)::in, response_content::in, io::di, io::uo) is det.
