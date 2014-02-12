@@ -6,6 +6,7 @@
 :- interface.
 
 :- import_module assoc_list.
+:- import_module list.
 :- import_module map.
 
     % RFC 822-style headers.
@@ -29,7 +30,13 @@
 
 :- pred add_header(string::in, string::in, headers::in, headers::out) is det.
 
+    % Return the body of the first field with the given name.
+    %
 :- pred search_field(headers::in, string::in, string::out) is semidet.
+
+    % Return the bodies of all fields which have the given name.
+    %
+:- pred search_field_multi(headers::in, string::in, list(string)::out) is det.
 
     % The parameter names must be in lowercase.
     %
@@ -42,7 +49,6 @@
 
 :- implementation.
 
-:- import_module list.
 :- import_module pair.
 :- import_module string.
 
@@ -71,6 +77,14 @@ add_header(Name, Body, Headers0, Headers) :-
 search_field(Headers, SearchName, Body) :-
     string.to_lower(SearchName, SearchNameLower),
     assoc_list.search(Headers, SearchNameLower, Body).
+
+search_field_multi(Headers, SearchName, Bodies) :-
+    string.to_lower(SearchName, SearchNameLower),
+    list.filter_map(match_field(SearchNameLower), Headers, Bodies).
+
+:- pred match_field(string::in, pair(string)::in, string::out) is semidet.
+
+match_field(SearchNameLower, SearchNameLower - Body, Body).
 
 %-----------------------------------------------------------------------------%
 

@@ -590,16 +590,16 @@ client_on_headers_complete(http_parser *parser)
 
     /* Pick up the method. */
     MR_make_aligned_string(method, http_method_str(client->parser.method));
-    client->request = request_set_method(client->request, method);
 
     /* Pick up the URL. */
     url = buffer_to_string(&client->request_acc.url_buf);
     buffer_clear(&client->request_acc.url_buf);
-    if (request_set_url_string(url, client->request, &client->request)
+
+    if (request_prepare(method, url, client->request, &client->request)
         == MR_FALSE)
     {
-        LOG("[%d:%d] request_set_url_string failed\n",
-            client->id, client->request_count, url);
+        LOG("[%d:%d] request_prepare failed\n",
+            client->id, client->request_count);
         /*
         ** XXX Servers must report a 400 (Bad Request) error if an HTTP/1.1
         ** request does not include a Host request-header

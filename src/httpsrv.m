@@ -37,6 +37,7 @@
                 path_decoded:: maybe(string), % percent decoded
                 query_params:: assoc_list(string), % percent decoded
                 headers     :: headers,
+                cookies     :: assoc_list(string),
                 body        :: content
             ).
 
@@ -125,6 +126,7 @@
 :- import_module mime_headers.
 :- import_module multipart_parser.
 :- import_module urlencoding.
+:- use_module rfc6265.
 
 :- include_module httpsrv.formdata_accum.
 :- include_module httpsrv.parse_url.
@@ -302,56 +304,12 @@ sum_length(Xs) = foldl(plus, map(length, Xs), 0).
 
 :- pragma foreign_export("C", request_init = out, "request_init").
 
-request_init = request(other(""), "", url_init, no, [], init_headers, none).
+request_init =
+    request(other(""), "", url_init, no, [], init_headers, [], none).
 
 :- func url_init = url.
 
 url_init = url(no, no, no, no, no, no).
-
-:- func request_set_method(request, string) = request.
-
-:- pragma foreign_export("C", request_set_method(in, in) = out,
-    "request_set_method").
-
-request_set_method(Req0, MethodString) = Req :-
-    ( method(MethodString, Method) ->
-        Req = Req0 ^ method := Method
-    ;
-        Req = Req0 ^ method := other(MethodString)
-    ).
-
-:- pred method(string, method).
-:- mode method(in, out) is semidet.
-:- mode method(out, in) is semidet.
-
-method("DELETE", delete).
-method("GET", get).
-method("HEAD", head).
-method("POST", post).
-method("PUT", put).
-
-:- pred request_set_url_string(string::in, request::in, request::out)
-    is semidet.
-
-:- pragma foreign_export("C", request_set_url_string(in, in, out),
-    "request_set_url_string").
-
-request_set_url_string(UrlString, !Req) :-
-    !Req ^ url_raw := UrlString,
-    ( UrlString = "*" ->
-        % Request applies to the server and not a resource.
-        % Maybe we could add an option for this.
-        true
-    ;
-        parse_url_and_host_header(!.Req ^ headers, UrlString, Url),
-        require_det (
-            decode_path(Url, MaybePathDecoded),
-            decode_query_parameters(Url, QueryParams),
-            !Req ^ url := Url,
-            !Req ^ path_decoded := MaybePathDecoded,
-            !Req ^ query_params := QueryParams
-        )
-    ).
 
 :- func request_add_header(request, string, string) = request.
 
@@ -383,6 +341,65 @@ request_get_expect_header(Req) = Result :-
     ;
         Result = 0
     ).
+
+:- pred request_prepare(string::in, string::in, request::in, request::out)
+    is semidet.
+
+:- pragma foreign_export("C", request_prepare(in, in, in, out),
+    "request_prepare").
+
+request_prepare(MethodString, UrlString, !Req) :-
+    request_set_method(MethodString, !Req),
+    request_set_url(UrlString, !Req),
+    request_set_cookies(!Req).
+
+:- pred request_set_method(string::in, request::in, request::out) is det.
+
+request_set_method(MethodString, !Req) :-
+    ( method(MethodString, Method) ->
+        !Req ^ method := Method
+    ;
+        !Req ^ method := other(MethodString)
+    ).
+
+:- pred method(string, method).
+:- mode method(in, out) is semidet.
+:- mode method(out, in) is semidet.
+
+method("DELETE", delete).
+method("GET", get).
+method("HEAD", head).
+method("POST", post).
+method("PUT", put).
+
+:- pred request_set_url(string::in, request::in, request::out) is semidet.
+
+request_set_url(UrlString, !Req) :-
+    !Req ^ url_raw := UrlString,
+    ( UrlString = "*" ->
+        % Request applies to the server and not a resource.
+        % Maybe we could add an option for this.
+        true
+    ;
+        parse_url_and_host_header(!.Req ^ headers, UrlString, Url),
+        require_det (
+            decode_path(Url, MaybePathDecoded),
+            decode_query_parameters(Url, QueryParams),
+            !Req ^ url := Url,
+            !Req ^ path_decoded := MaybePathDecoded,
+            !Req ^ query_params := QueryParams
+        )
+    ).
+
+:- pred request_set_cookies(request::in, request::out) is det.
+
+request_set_cookies(!Req) :-
+    % Parse all Cookie: header values, dropping anything we can't recognise.
+    search_field_multi(!.Req ^ headers, "Cookie", CookieHeaderValues),
+    list.filter_map(rfc6265.parse_cookie_header_value, CookieHeaderValues,
+        Cookiess),
+    list.condense(Cookiess, Cookies),
+    !Req ^ cookies := Cookies.
 
 :- func request_set_body_stringish(request, string) = request.
 

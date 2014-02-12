@@ -16,6 +16,7 @@
 
 :- import_module list.
 :- import_module maybe.
+:- import_module pair.
 :- import_module string.
 :- import_module thread.
 
@@ -58,6 +59,7 @@ real_handler(Client, Request, !IO) :-
     Url = Request ^ url,
     MaybePathDecoded = Request ^ path_decoded,
     QueryParams = Request ^ query_params,
+    Cookies = Request ^ cookies,
     (
         MaybePathDecoded = yes(PathDecoded),
         static_path(PathDecoded, FilePath)
@@ -76,7 +78,7 @@ real_handler(Client, Request, !IO) :-
         )
     ;
         Status = ok_200,
-        AdditionalHeaders = [],
+        AdditionalHeaders = [set_cookie("my-cookie" - "my-cookie-value", [])],
         Headers = Request ^ headers,
         Body = Request ^ body,
         Content = strings([
@@ -85,6 +87,7 @@ real_handler(Client, Request, !IO) :-
             "Path: ", string(MaybePathDecoded), "\n",
             "Query parameters: ", string(QueryParams), "\n",
             "Headers: ", string(Headers), "\n",
+            "Cookies: ", string(Cookies), "\n",
             "Body: ", string(Body), "\n"
         ])
     ),
