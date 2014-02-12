@@ -57,35 +57,40 @@ get_parts(Acc) = Parts :-
     pred(on_part_end/2)         is formdata_accum.on_part_end
 ].
 
-:- pred on_headers_complete(headers::in, maybe_error::out,
+:- pred on_headers_complete(on_headers_complete_info::in, maybe_error::out,
     formdata_accum::in, formdata_accum::out) is det.
 
-on_headers_complete(Headers, Res, !Acc) :-
+on_headers_complete(Info, Res, !Acc) :-
+    Info ^ content_disposition_type = MaybeDispositionType,
+    Info ^ content_disposition_name = MaybeName,
+    Info ^ content_disposition_filename = MaybeFileName,
+    Info ^ content_type_media_type = MediaType,
+    Info ^ content_transfer_encoding_mechanism = MaybeCTE,
+
     (
-        search_content_disposition(Headers, Disposition, Params),
-        Disposition = form_data
+        MaybeDispositionType = yes(DispositionType),
+        DispositionType = form_data
     ->
-        !Acc ^ cur_part ^ disposition := Disposition,
-        ( search_parameter(Params, name, Name) ->
+        !Acc ^ cur_part ^ disposition := DispositionType,
+        (
+            MaybeName = yes(Name),
             !Acc ^ cur_name := Name
         ;
-            true
+            MaybeName = no
         ),
-        ( search_parameter(Params, filename, FileName) ->
+        (
+            MaybeFileName = yes(FileName),
             !Acc ^ cur_part ^ filename := yes(FileName)
         ;
-            true
+            MaybeFileName = no
         ),
-
-        get_content_type(Headers, media_type(MediaType), _ContentTypeParams),
         !Acc ^ cur_part ^ media_type := MediaType,
-
-        ( search_content_transfer_encoding(Headers, CTE) ->
+        (
+            MaybeCTE = yes(CTE),
             !Acc ^ cur_part ^ content_transfer_encoding := yes(CTE)
         ;
-            true
+            MaybeCTE = no
         ),
-
         Res = ok
     ;
         Res = error("content disposition is not form-data or failed to parse")
@@ -118,14 +123,6 @@ on_part_end(Acc0, Acc) :-
 :- func form_data = string.
 
 form_data = "form-data".
-
-:- func name = string.
-
-name = "name".
-
-:- func filename = string.
-
-filename = "filename".
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

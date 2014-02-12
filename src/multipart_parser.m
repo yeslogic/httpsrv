@@ -9,7 +9,6 @@
 :- import_module maybe.
 
 :- import_module buffer.
-:- import_module headers.
 
 %-----------------------------------------------------------------------------%
 
@@ -26,12 +25,21 @@
     <= callbacks(T).
 
 :- typeclass callbacks(T) where [
-    pred on_headers_complete(headers::in, maybe_error::out, T::in, T::out)
-            is det,
+    pred on_headers_complete(on_headers_complete_info::in, maybe_error::out,
+            T::in, T::out) is det,
     pred on_body_chunk(c_pointer::in, int::in, T::in, T::out, io::di, io::uo)
             is det,
     pred on_part_end(T::in, T::out) is det
 ].
+
+:- type on_headers_complete_info
+    --->    on_headers_complete_info(
+                content_disposition_type :: maybe(string),
+                content_disposition_name :: maybe(string),
+                content_disposition_filename :: maybe(string),
+                content_type_media_type :: string,
+                content_transfer_encoding_mechanism :: maybe(string)
+            ).
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -44,6 +52,7 @@
 :- import_module require.
 :- import_module string.
 
+:- import_module headers.
 :- import_module mime_headers.
 
 :- pragma foreign_decl("C", local, "
@@ -230,13 +239,14 @@ have_header_block(Buf, StartPos, EndPos, !PS, !IO) :-
     multipart_parser(T)::in, multipart_parser(T)::out) is det <= callbacks(T).
 
 have_headers(Headers, !PS) :-
-    get_content_type(Headers, MediaType, _Params),
+    mime_headers.get_content_type(Headers, MediaType, _Params),
     ( media_type_equals(MediaType, multipart_mixed) ->
         % The encoding algorithm in the HTML5 spec avoids content type
         % multipart/mixed so supporting it is probably not a high priority.
         !PS ^ state := error("multipart/mixed not supported")
     ;
-        call_on_headers_complete(Headers, Continue, !PS),
+        make_on_headers_complete_info(Headers, Info),
+        call_on_headers_complete(Info, Continue, !PS),
         (
             Continue = ok,
             !PS ^ state := in_body
@@ -246,13 +256,55 @@ have_headers(Headers, !PS) :-
         )
     ).
 
-:- pred call_on_headers_complete(headers::in, maybe_error::out,
-    multipart_parser(T)::in, multipart_parser(T)::out) is det <= callbacks(T).
+:- pred make_on_headers_complete_info(headers::in,
+    on_headers_complete_info::out) is det.
 
-call_on_headers_complete(Headers, Continue, PS0, PS) :-
+make_on_headers_complete_info(Headers, Info) :-
+    ( search_content_disposition(Headers, Disposition, Params) ->
+        MaybeDispositionType = yes(Disposition),
+        ( search_parameter(Params, name, Name) ->
+            MaybeName = yes(Name)
+        ;
+            MaybeName = no
+        ),
+        ( search_parameter(Params, filename, FileName) ->
+            MaybeFileName = yes(FileName)
+        ;
+            MaybeFileName = no
+        )
+    ;
+        MaybeDispositionType = no,
+        MaybeName = no,
+        MaybeFileName = no
+    ),
+    get_content_type(Headers, media_type(MediaType), _ContentTypeParams),
+    ( search_content_transfer_encoding(Headers, CTE) ->
+        MaybeCTE = yes(CTE)
+    ;
+        MaybeCTE = no
+    ),
+    Info ^ content_disposition_type = MaybeDispositionType,
+    Info ^ content_disposition_name = MaybeName,
+    Info ^ content_disposition_filename = MaybeFileName,
+    Info ^ content_type_media_type = MediaType,
+    Info ^ content_transfer_encoding_mechanism = MaybeCTE.
+
+:- pred call_on_headers_complete(on_headers_complete_info::in,
+    maybe_error::out, multipart_parser(T)::in, multipart_parser(T)::out)
+    is det <= callbacks(T).
+
+call_on_headers_complete(Info, Continue, PS0, PS) :-
     PS0 ^ userdata = UserData0,
-    on_headers_complete(Headers, Continue, UserData0, UserData),
+    on_headers_complete(Info, Continue, UserData0, UserData),
     PS = PS0 ^ userdata := UserData.
+
+:- func name = string.
+
+name = "name".
+
+:- func filename = string.
+
+filename = "filename".
 
 :- func multipart_mixed = string.
 
