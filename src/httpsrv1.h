@@ -8,6 +8,9 @@
 
 #include <stdbool.h>
 
+#include "uv.h"
+#include "http_parser.h"
+
 enum daemon_state {
     DAEMON_STARTING = 1,
     DAEMON_RUNNING,
@@ -182,13 +185,16 @@ client_on_close_2(uv_handle_t *handle);
 static void
 client_on_close_3(uv_handle_t *handle);
 
-static void
-set_response_bufs(client_t *client,
+static MR_String
+client_address_ipv4(client_t *client, MR_AllocSiteInfoPtr alloc_id);
+
+void
+_httpsrv_set_response_bufs(client_t *client,
     MR_Word response_list, MR_Integer response_list_length,
     MR_Integer response_file_fd, MR_Integer response_file_size);
 
-static void
-send_async(client_t *client);
+void
+_httpsrv_send_async(client_t *client);
 
 #endif
 

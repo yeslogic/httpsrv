@@ -5,6 +5,8 @@
 
 #include "httpsrv1.h"
 
+#include "httpsrv.request.mh"
+
 /*
 ** Constants
 */
@@ -1063,11 +1065,39 @@ client_on_close_3(uv_handle_t *handle)
 }
 
 /*
+** Get client address
+*/
+
+static MR_String
+client_address_ipv4(client_t *client, MR_AllocSiteInfoPtr alloc_id)
+{
+    struct sockaddr_in name;
+    int namelen;
+    char tmp[sizeof "255.255.255.255"];
+    MR_String s;
+    int r;
+
+    namelen = sizeof(name);
+    r = uv_tcp_getpeername(&client->tcp, (struct sockaddr *) &name, &namelen);
+    if (r != 0 || namelen > sizeof(name)) {
+        s = MR_make_string_const("");
+    } else {
+        r = uv_ip4_name(&name, tmp, sizeof(tmp));
+        if (r == 0) {
+            MR_make_aligned_string_copy_msg(s, tmp, alloc_id);
+        } else {
+            s = MR_make_string_const("");
+        }
+    }
+    return s;
+}
+
+/*
 ** Set response
 */
 
-static void
-set_response_bufs(client_t *client,
+void
+_httpsrv_set_response_bufs(client_t *client,
     MR_Word response_list, MR_Integer response_list_length,
     MR_Integer response_file, MR_Integer response_file_size)
 {
@@ -1098,8 +1128,8 @@ set_response_bufs(client_t *client,
     client->response_file_size = response_file_size;
 }
 
-static void
-send_async(client_t *client)
+void
+_httpsrv_send_async(client_t *client)
 {
     /*
     ** We can't call libuv functions off the main thread.

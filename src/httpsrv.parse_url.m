@@ -18,11 +18,14 @@
 :- implementation.
 
 :- import_module char.
+:- import_module int.
 :- import_module parsing_utils.
+:- import_module string.
 :- import_module unit.
 
 :- import_module percent_decoding.
 :- import_module rfc_parsing_utils.
+:- import_module urlencoding.
 
 %-----------------------------------------------------------------------------%
 

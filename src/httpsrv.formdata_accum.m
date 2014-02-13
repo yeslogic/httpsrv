@@ -5,6 +5,8 @@
 
 :- interface.
 
+:- import_module multipart_parser.
+
 :- type formdata_accum.
 
 :- func init = formdata_accum.

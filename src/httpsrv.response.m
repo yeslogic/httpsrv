@@ -5,79 +5,109 @@
 
 :- interface.
 
-:- func render_response_header(response_header) = cord(string).
+:- pred set_response(request::in, status_code::in, list(response_header)::in,
+    response_content::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
 
-:- import_module list.
+:- import_module cord.
+:- import_module int.
+:- import_module string.
 
-render_response_header(Header) =
-    from_list(render(Header)) ++ singleton("\r\n").
+:- import_module http_date.
+:- import_module httpsrv.response_header.
 
-:- func render(response_header) = list(string).
+:- pragma foreign_decl("C", local, "
+    #include ""httpsrv1.h""
+").
 
-render(H) = L :-
+%-----------------------------------------------------------------------------%
+
+set_response(Request, Status, AdditionalHeaders, Content, !IO) :-
+    Client = Request ^ client,
+    time(Time, !IO),
+    HttpDate = timestamp_to_http_date(Time),
+    KeepAlive = client_should_keep_alive(Client),
     (
-        H = cache_control_max_age(DeltaSeconds),
-        L = ["Cache-Control: max-age=", from_int(DeltaSeconds)]
+        KeepAlive = yes,
+        MaybeConnectionClose = ""
     ;
-        H = content_type(MediaType),
-        L = ["Content-Type: ", MediaType]
-    ;
-        H = content_type_charset_utf8(MediaType),
-        L = ["Content-Type: ", MediaType, "; charset=utf-8"]
-    ;
-        H = content_disposition(DispositionType),
-        L = ["Content-Disposition: ", DispositionType]
-    ;
-        H = set_cookie(Name - Value, Attrs),
-        L = ["Set-Cookie: ", Name, "=", Value | render_cookie_attrs(Attrs)]
-    ;
-        H = x_content_type_options_nosniff,
-        L = ["X-Content-Type-Options: nosniff"]
-    ;
-        H = custom(Name - Value, Params),
-        L = [Name, ": ", Value | render_params(Params)]
-    ).
-
-:- func render_cookie_attrs(list(cookie_attribute)) = list(string).
-
-render_cookie_attrs(Attrs) = condense(map(render_cookie_attr, Attrs)).
-
-:- func render_cookie_attr(cookie_attribute) = list(string).
-
-render_cookie_attr(Attr) = L :-
+        KeepAlive = no,
+        MaybeConnectionClose = "Connection: close\r\n"
+    ),
     (
-        Attr = expires(Time),
-        L = ["; Expires=", timestamp_to_http_date(Time)]
+        Content = strings(ContentStrings),
+        ContentLength = sum_length(ContentStrings),
+        ( skip_body(Request) ->
+            Body = cord.init
+        ;
+            Body = cord.from_list(ContentStrings)
+        ),
+        FileFd = -1,
+        FileSize = 0
     ;
-        Attr = max_age(MaxAge),
-        % By RFC 6265, this should be strictly positive (not zero).
-        L = ["; MaxAge=", from_int(MaxAge)]
-    ;
-        Attr = domain(Domain),
-        L = ["; Domain=", Domain]
-    ;
-        Attr = path(Path),
-        L = ["; Path=", Path]
-    ;
-        Attr = secure,
-        L = ["; Secure"]
-    ;
-        Attr = httponly,
-        L = ["; HttpOnly"]
-    ).
+        Content = file(StaticFile),
+        ContentLength = StaticFile ^ file_size,
+        Body = cord.init,
+        ( skip_body(Request) ->
+            static_file.close_static_file(StaticFile, !IO),
+            FileFd = -1,
+            FileSize = 0
+        ;
+            StaticFile = static_file(FileFd, FileSize)
+        )
+    ),
 
-:- func render_params(list(pair(string))) = list(string).
+    HeaderPre = cord.from_list([
+        "HTTP/1.1 ", text(Status), "\r\n",
+        "Date: ", HttpDate, "\r\n"
+    ]),
+    HeaderMid = list.map(render_response_header, AdditionalHeaders),
+    HeaderPost = cord.from_list([
+        "Content-Length: ", from_int(ContentLength), "\r\n",
+        MaybeConnectionClose,
+        "\r\n"
+    ]),
+    ResponseCord = HeaderPre ++ cord_list_to_cord(HeaderMid) ++ HeaderPost ++
+        Body,
+    ResponseList = cord.list(ResponseCord),
+    set_response_2(Client, ResponseList, length(ResponseList),
+        FileFd, FileSize, !IO).
 
-render_params(Pairs) = condense(map(render_param, Pairs)).
+:- pred set_response_2(client::in, list(string)::in, int::in,
+    int::in, int::in, io::di, io::uo) is det.
 
-:- func render_param(pair(string)) = list(string).
+:- pragma foreign_proc("C",
+    set_response_2(Client::in, ResponseList::in, ResponseListLength::in,
+        FileFd::in, FileLength::in, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
+    _httpsrv_set_response_bufs(Client, ResponseList, ResponseListLength,
+        FileFd, FileLength);
+    _httpsrv_send_async(Client);
+").
 
-render_param(Name - Value) = ["; ", Name, "=", Value].
+:- pred skip_body(request::in) is semidet.
+
+skip_body(Request) :-
+    Request ^ method = head.
+
+:- func sum_length(list(string)) = int.
+
+sum_length(Xs) = foldl(plus, map(length, Xs), 0).
+
+:- func client_should_keep_alive(client) = bool.
+
+:- pragma foreign_proc("C",
+    client_should_keep_alive(Client::in) = (KeepAlive::out),
+    [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
+"
+    KeepAlive = (Client->should_keep_alive) ? MR_YES : MR_NO;
+").
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
