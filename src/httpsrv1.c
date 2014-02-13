@@ -519,9 +519,8 @@ client_on_url(http_parser *parser, const char *at, size_t length)
 {
     client_t *client = client_from_parser_data(parser);
 
-    DISABLE LOG("[%d:%d] on_url '%s'\n",
-        client->id, client->request_count,
-        make_string(at, 0, length));
+    DISABLE LOG("[%d:%d] on_url\n",
+        client->id, client->request_count);
 
     buffer_append(&client->request_acc.url_buf, at, length);
 
@@ -532,8 +531,15 @@ static void
 maybe_done_prev_header(client_t *client, bool force_clear)
 {
     if (client->request_acc.last_header_cb == WAS_HEADER_VALUE) {
-        MR_String field = buffer_to_string(&client->request_acc.header_field_buf);
-        MR_String value = buffer_to_string(&client->request_acc.header_value_buf);
+        MR_String field;
+        MR_String value;
+        MR_bool valid;
+
+        /* XXX verify UTF-8 */
+        field = buffer_to_string_utf8(&client->request_acc.header_field_buf,
+                    &valid);
+        value = buffer_to_string_utf8(&client->request_acc.header_value_buf,
+                    &valid);
 
         LOG("[%d:%d] header: '%s: %s'\n",
             client->id, client->request_count,
@@ -586,6 +592,7 @@ client_on_headers_complete(http_parser *parser)
     client_t *client = client_from_parser_data(parser);
     MR_String method;
     MR_String url;
+    MR_bool valid;
 
     /* Pick up the last header, if any */
     maybe_done_prev_header(client, true);
@@ -594,7 +601,8 @@ client_on_headers_complete(http_parser *parser)
     MR_make_aligned_string(method, http_method_str(client->parser.method));
 
     /* Pick up the URL. */
-    url = buffer_to_string(&client->request_acc.url_buf);
+    /* XXX verify UTF-8 */
+    url = buffer_to_string_utf8(&client->request_acc.url_buf, &valid);
     buffer_clear(&client->request_acc.url_buf);
 
     if (request_prepare(method, url, client->request, &client->request)
@@ -818,9 +826,12 @@ client_set_request_body(client_t *client)
     } else if (client->request_acc.body_buf.len == 0) {
         /* none */
     } else {
+        MR_bool valid;
+        MR_String body;
+
         /* XXX verify UTF-8 */
-        client->request = request_set_body_stringish(client->request,
-            buffer_to_string(&client->request_acc.body_buf));
+        body = buffer_to_string_utf8(&client->request_acc.body_buf, &valid);
+        client->request = request_set_body_stringish(client->request, body);
     }
 }
 

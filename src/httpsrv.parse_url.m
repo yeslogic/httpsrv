@@ -136,13 +136,16 @@ maybe_field(Input, ParseResult, Field, MaybeString) :-
     get_field(Input::in, ParseResult::in, Field::in, Str::out),
     [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
 "
-    SUCCESS_INDICATOR = (ParseResult->field_set & (1 << Field));
-    if (SUCCESS_INDICATOR) {
+    if (ParseResult->field_set & (1 << Field)) {
         uint16_t off = ParseResult->field_data[Field].off;
         uint16_t len = ParseResult->field_data[Field].len;
-        Str = make_string(Input, off, len);
+        MR_bool valid;
+
+        Str = make_string_utf8(Input, off, len, &valid);
+        SUCCESS_INDICATOR = valid;
     } else {
         Str = MR_make_string_const("""");
+        SUCCESS_INDICATOR = MR_FALSE;
     }
 ").
 

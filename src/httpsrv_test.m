@@ -91,7 +91,7 @@ real_handler(Request, !IO) :-
             "Headers: ", string(Headers), "\n",
             "Cookies: ", string(Cookies), "\n",
             "Body: ", string(Body), "\n"
-        ])
+        ] ++ present(Body))
     ),
     set_response(Request, Status, AdditionalHeaders, Content, !IO),
     cc_multi_equal(!IO).
@@ -102,6 +102,42 @@ static_path(PathDecoded, StaticPath) :-
     Resource = words_separator(unify('/'), PathDecoded),
     Resource = ["static" | _],
     StaticPath = string.join_list("/", Resource).
+
+:- func present(content) = list(string).
+
+present(none) = [].
+present(string(String)) = ["«", String, "»\n"].
+present(form_urlencoded(Pairs)) =
+    condense(map(present_pairs, Pairs)).
+present(multipart_formdata(FormData)) =
+    condense(map(present_formdata, FormData)).
+
+:- func present_pairs(pair(string)) = list(string).
+
+present_pairs(Name - Value) = [Name, "=«", Value, "»\n"].
+
+:- func present_formdata(pair(string, formdata)) = list(string).
+
+present_formdata(Name - FormData) = L :-
+    FileName = FormData ^ filename,
+    MediaType = FormData ^ media_type,
+    CTE = FormData ^ content_transfer_encoding,
+    Content = FormData ^ content,
+    ContentLength = formdata_content_length(Content),
+    ( formdata_content_to_string(Content, String) ->
+        PresentString = ["«", String, "»\n"]
+    ;
+        PresentString = ["(not a UTF-8 string)\n"]
+    ),
+    L = [
+        "--------\n",
+        "name=", Name, "\n",
+        "filename=", string(FileName), "\n",
+        "mediatype=", MediaType, "\n",
+        "content-transfer-encoding=", string(CTE), "\n",
+        "length=", from_int(ContentLength), "\n"
+        | PresentString
+    ].
 
 :- pred usleep(int::in, io::di, io::uo) is det.
 

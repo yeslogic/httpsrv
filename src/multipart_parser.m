@@ -222,16 +222,16 @@ execute(_Buf, !BufPos, !PS, !IO) :-
     <= callbacks(T).
 
 have_header_block(Buf, StartPos, EndPos, !PS, !IO) :-
-    make_string_utf8(Buf, StartPos, EndPos, Ok, String, !IO),
+    make_string_utf8(Buf, StartPos, EndPos, MaybeString, !IO),
     (
-        Ok = yes,
+        MaybeString = yes(String),
         ( mime_headers.parse_headers(String, Headers) ->
             have_headers(Headers, !PS)
         ;
             !PS ^ state := error("error parsing headers")
         )
     ;
-        Ok = no,
+        MaybeString = no,
         !PS ^ state := error("headers not UTF-8")
     ).
 

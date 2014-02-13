@@ -36,10 +36,14 @@ void
 buffer_shift(buffer_t *buf, ssize_t n);
 
 MR_String
-buffer_to_string(buffer_t *buf);
+buffer_to_string_utf8(buffer_t *buf, MR_bool *valid);
 
 MR_String
-make_string(const char *buf, size_t off, size_t len);
+buffers_to_string_utf8(MR_Word bufs /* list(buffer(buffer_ro)) */,
+    size_t total_len, MR_bool *valid);
+
+MR_String
+make_string_utf8(const char *buf, size_t off, size_t len, MR_bool *valid);
 
 #endif
 

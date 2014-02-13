@@ -72,17 +72,6 @@
             % Keys are in RECEIVED order and duplicate keys are possible.
     ;       multipart_formdata(assoc_list(string, formdata)).
 
-:- type formdata
-    --->    formdata(
-                disposition                 :: string,
-                filename                    :: maybe(string),
-                media_type                  :: string,
-                content_transfer_encoding   :: maybe(string),
-                content                     :: formdata_content
-            ).
-
-:- type formdata_content.
-
 :- func get_method(request) = method.
 
 :- func get_url_raw(request) = string.
@@ -101,6 +90,26 @@
 
 :- pred get_client_address_ipv4(request::in, maybe(string)::out,
     io::di, io::uo) is det.
+
+%-----------------------------------------------------------------------------%
+
+% Form-data
+
+:- type formdata
+    --->    formdata(
+                disposition                 :: string,
+                filename                    :: maybe(string),
+                media_type                  :: string,
+                content_transfer_encoding   :: maybe(string),
+                content                     :: formdata_content
+            ).
+
+:- type formdata_content.
+
+:- func formdata_content_length(formdata_content) = int.
+
+:- pred formdata_content_to_string(formdata_content::in, string::out)
+    is semidet.
 
 %-----------------------------------------------------------------------------%
 
@@ -195,7 +204,7 @@
                 body        :: content
             ).
 
-:- type formdata_content == list(buffer).
+:- type formdata_content == list(buffer(buffer_ro)).
 
 :- type static_file
     --->    static_file(
@@ -310,6 +319,13 @@ get_client_address_ipv4(Request, Res, !IO) :-
 "
     String = client_address_ipv4(Client, MR_ALLOC_ID);
 ").
+
+%-----------------------------------------------------------------------------%
+
+formdata_content_length(Content) = total_length(Content).
+
+formdata_content_to_string(Bufs, String) :-
+    buffers_to_string_utf8(Bufs, String).
 
 %-----------------------------------------------------------------------------%
 
