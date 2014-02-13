@@ -27,11 +27,12 @@
     ;       port(int)
     ;       back_log(int).
 
-:- type request_handler == pred(client, request, io, io).
-:- inst request_handler == (pred(in, in, di, uo) is cc_multi).
+:- type request_handler == pred(request, io, io).
+:- inst request_handler == (pred(in, di, uo) is cc_multi).
 
 :- type request
     --->    request(
+                client      :: client,
                 method      :: method,
                 url_raw     :: string, % mainly for debugging
                 url         :: url,
@@ -111,11 +112,11 @@
     ;       secure
     ;       httponly.
 
-:- pred set_response(client::in, request::in, status_code::in,
-    list(response_header)::in, response_content::in, io::di, io::uo) is det.
+:- pred set_response(request::in, status_code::in, list(response_header)::in,
+    response_content::in, io::di, io::uo) is det.
 
-:- pred get_client_address_ipv4(client::in, maybe(string)::out, io::di, io::uo)
-    is det.
+:- pred get_client_address_ipv4(request::in, maybe(string)::out,
+    io::di, io::uo) is det.
 
 :- type static_file.
 
@@ -235,7 +236,8 @@ find([T | Ts], P, Default) =
 
 %-----------------------------------------------------------------------------%
 
-set_response(Client, Request, Status, AdditionalHeaders, Content, !IO) :-
+set_response(Request, Status, AdditionalHeaders, Content, !IO) :-
+    Client = Request ^ client,
     time(Time, !IO),
     HttpDate = timestamp_to_http_date(Time),
     KeepAlive = client_should_keep_alive(Client),
@@ -312,12 +314,12 @@ sum_length(Xs) = foldl(plus, map(length, Xs), 0).
 
 % Mercury to C
 
-:- func request_init = request.
+:- func request_init(client) = request.
 
-:- pragma foreign_export("C", request_init = out, "request_init").
+:- pragma foreign_export("C", request_init(in) = out, "request_init").
 
-request_init =
-    request(other(""), "", url_init, no, [], init_headers, [], none).
+request_init(Client) =
+    request(Client, other(""), "", url_init, no, [], init_headers, [], none).
 
 :- func url_init = url.
 
@@ -492,14 +494,14 @@ request_set_body_formdata(Req0, PS) = Req :-
     Req = Req0 ^ body := multipart_formdata(Parts).
 
 :- pred call_request_handler_pred(request_handler::in(request_handler),
-    client::in, request::in, io::di, io::uo) is cc_multi.
+    request::in, io::di, io::uo) is cc_multi.
 
 :- pragma foreign_export("C",
-    call_request_handler_pred(in(request_handler), in, in, di, uo),
+    call_request_handler_pred(in(request_handler), in, di, uo),
     "call_request_handler_pred").
 
-call_request_handler_pred(Pred, Client, Request, !IO) :-
-    call(Pred, Client, Request, !IO).
+call_request_handler_pred(Pred, Request, !IO) :-
+    call(Pred, Request, !IO).
 
 %-----------------------------------------------------------------------------%
 
@@ -516,8 +518,8 @@ call_request_handler_pred(Pred, Client, Request, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-get_client_address_ipv4(Client, Res, !IO) :-
-    get_client_address_ipv4_2(Client, Address, !IO),
+get_client_address_ipv4(Request, Res, !IO) :-
+    get_client_address_ipv4_2(Request ^ client, Address, !IO),
     ( Address = "" ->
         Res = no
     ;

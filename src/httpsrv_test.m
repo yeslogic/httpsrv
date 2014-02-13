@@ -45,15 +45,15 @@ main(!IO) :-
         io.set_exit_status(1, !IO)
     ).
 
-:- pred request_handler(client::in, request::in, io::di, io::uo) is cc_multi.
+:- pred request_handler(request::in, io::di, io::uo) is cc_multi.
 
-request_handler(Client, Request, !IO) :-
-    % real_handler(Client, Request, !IO).
-    thread.spawn(real_handler(Client, Request), !IO).
+request_handler(Request, !IO) :-
+    % real_handler(Request, !IO).
+    thread.spawn(real_handler(Request), !IO).
 
-:- pred real_handler(client::in, request::in, io::di, io::uo) is cc_multi.
+:- pred real_handler(request::in, io::di, io::uo) is cc_multi.
 
-real_handler(Client, Request, !IO) :-
+real_handler(Request, !IO) :-
     usleep(100000, !IO),
     Method = Request ^ method,
     Url = Request ^ url,
@@ -77,7 +77,7 @@ real_handler(Client, Request, !IO) :-
             Content = strings([Error])
         )
     ;
-        get_client_address_ipv4(Client, MaybeClientAddress, !IO),
+        get_client_address_ipv4(Request, MaybeClientAddress, !IO),
         Status = ok_200,
         AdditionalHeaders = [set_cookie("my-cookie" - "my-cookie-value", [])],
         Headers = Request ^ headers,
@@ -93,7 +93,7 @@ real_handler(Client, Request, !IO) :-
             "Body: ", string(Body), "\n"
         ])
     ),
-    set_response(Client, Request, Status, AdditionalHeaders, Content, !IO),
+    set_response(Request, Status, AdditionalHeaders, Content, !IO),
     cc_multi_equal(!IO).
 
 :- pred static_path(string::in, string::out) is semidet.

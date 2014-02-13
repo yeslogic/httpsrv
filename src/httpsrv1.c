@@ -295,7 +295,7 @@ make_client(daemon_t *daemon)
     client->state = IDLE;
     client->should_keep_alive = false;
     client->deferred_on_message_complete = false;
-    client->request = request_init();
+    client->request = request_init(client);
 
     uv_tcp_init(loop, &client->tcp);
     uv_async_init(loop, &client->async, client_on_async); 
@@ -493,7 +493,7 @@ client_on_message_begin(http_parser *parser)
     assert(client->state == IDLE);
     client->should_keep_alive = false;
     client->deferred_on_message_complete = false;
-    client->request = request_init();
+    client->request = request_init(client);
 
     /* Do not clear read_buf; would break pipelining. */
     buffer_clear(&client->request_acc.url_buf);
@@ -728,7 +728,7 @@ client_on_message_complete(http_parser *parser)
 
     client->state = PREPARING_RESPONSE;
     call_request_handler_pred(client->daemon->request_handler,
-        client, client->request);
+        client->request);
 
     return 0;
 }
