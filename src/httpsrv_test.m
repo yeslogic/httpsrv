@@ -55,11 +55,11 @@ request_handler(Request, !IO) :-
 
 real_handler(Request, !IO) :-
     usleep(100000, !IO),
-    Method = Request ^ method,
-    Url = Request ^ url,
-    MaybePathDecoded = Request ^ path_decoded,
-    QueryParams = Request ^ query_params,
-    Cookies = Request ^ cookies,
+    Method = get_method(Request),
+    Url = get_url(Request),
+    MaybePathDecoded = get_path_decoded(Request),
+    QueryParams = get_query_parameters(Request),
+    Cookies = get_cookies(Request),
     (
         MaybePathDecoded = yes(PathDecoded),
         static_path(PathDecoded, FilePath)
@@ -80,8 +80,8 @@ real_handler(Request, !IO) :-
         get_client_address_ipv4(Request, MaybeClientAddress, !IO),
         Status = ok_200,
         AdditionalHeaders = [set_cookie("my-cookie" - "my-cookie-value", [])],
-        Headers = Request ^ headers,
-        Body = Request ^ body,
+        Headers = get_headers(Request),
+        Body = get_body(Request),
         Content = strings([
             "Client address: ", string(MaybeClientAddress), "\n",
             "Method: ", string(Method), "\n",

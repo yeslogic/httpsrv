@@ -19,8 +19,9 @@
 
 %-----------------------------------------------------------------------------%
 
+% Starting the server
+
 :- type daemon.
-:- type client.
 
 :- type server_setting
     --->    bind_address(string)
@@ -30,18 +31,16 @@
 :- type request_handler == pred(request, io, io).
 :- inst request_handler == (pred(in, di, uo) is cc_multi).
 
-:- type request
-    --->    request(
-                client      :: client,
-                method      :: method,
-                url_raw     :: string, % mainly for debugging
-                url         :: url,
-                path_decoded:: maybe(string), % percent decoded
-                query_params:: assoc_list(string), % percent decoded
-                headers     :: headers,
-                cookies     :: assoc_list(string),
-                body        :: content
-            ).
+:- pred setup(request_handler::in(request_handler), list(server_setting)::in,
+    maybe_error(daemon)::out, io::di, io::uo) is det.
+
+:- pred run(daemon::in, io::di, io::uo) is det.
+
+%-----------------------------------------------------------------------------%
+
+% Getting information about the request
+
+:- type request.
 
 :- type method
     --->    delete
@@ -84,14 +83,28 @@
 
 :- type formdata_content.
 
-:- pred setup(request_handler::in(request_handler), list(server_setting)::in,
-    maybe_error(daemon)::out, io::di, io::uo) is det.
+:- func get_method(request) = method.
 
-:- pred run(daemon::in, io::di, io::uo) is det.
+:- func get_url_raw(request) = string.
 
-:- type response_content
-    --->    strings(list(string))
-    ;       file(static_file).
+:- func get_url(request) = url.
+
+:- func get_path_decoded(request) = maybe(string).
+
+:- func get_query_parameters(request) = assoc_list(string).
+
+:- func get_headers(request) = headers.
+
+:- func get_cookies(request) = assoc_list(string).
+
+:- func get_body(request) = content.
+
+:- pred get_client_address_ipv4(request::in, maybe(string)::out,
+    io::di, io::uo) is det.
+
+%-----------------------------------------------------------------------------%
+
+% Setting the response
 
     % NOTE: for now, the user is responsible for any necessary escaping!
     %
@@ -112,11 +125,16 @@
     ;       secure
     ;       httponly.
 
+:- type response_content
+    --->    strings(list(string))
+    ;       file(static_file).
+
 :- pred set_response(request::in, status_code::in, list(response_header)::in,
     response_content::in, io::di, io::uo) is det.
 
-:- pred get_client_address_ipv4(request::in, maybe(string)::out,
-    io::di, io::uo) is det.
+%-----------------------------------------------------------------------------%
+
+% Serving static files
 
 :- type static_file.
 
@@ -150,6 +168,8 @@
 
 %-----------------------------------------------------------------------------%
 
+:- type client.
+
 :- pragma foreign_type("C", daemon, "daemon_t *").
 :- pragma foreign_type("C", client, "client_t *").
 
@@ -169,6 +189,19 @@
 :- pragma foreign_code("C", "
     #include ""httpsrv1.c""
 ").
+
+:- type request
+    --->    request(
+                client      :: client,
+                method      :: method,
+                url_raw     :: string, % mainly for debugging
+                url         :: url,
+                path_decoded:: maybe(string), % percent decoded
+                query_params:: assoc_list(string), % percent decoded
+                headers     :: headers,
+                cookies     :: assoc_list(string),
+                body        :: content
+            ).
 
 :- type formdata_content == list(buffer).
 
@@ -232,6 +265,58 @@ find([T | Ts], P, Default) =
 "
     uv_run(Daemon->loop, UV_RUN_DEFAULT);
     daemon_cleanup(Daemon);
+").
+
+%-----------------------------------------------------------------------------%
+
+get_method(Request) = Request ^ method.
+
+get_url_raw(Request) = Request ^ url_raw.
+
+get_url(Request) = Request ^ url.
+
+get_path_decoded(Request) = Request ^ path_decoded.
+
+get_query_parameters(Request) = Request ^ query_params.
+
+get_headers(Request) = Request ^ headers.
+
+get_cookies(Request) = Request ^ cookies.
+
+get_body(Request) = Request ^ body.
+
+get_client_address_ipv4(Request, Res, !IO) :-
+    get_client_address_ipv4_2(Request ^ client, Address, !IO),
+    ( Address = "" ->
+        Res = no
+    ;
+        Res = yes(Address)
+    ).
+
+:- pred get_client_address_ipv4_2(client::in, string::out, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    get_client_address_ipv4_2(Client::in, String::out, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
+    struct sockaddr_in name;
+    int namelen;
+    char tmp[sizeof ""255.255.255.255""];
+    int r;
+
+    namelen = sizeof(name);
+    r = uv_tcp_getpeername(&Client->tcp, (struct sockaddr *) &name, &namelen);
+    if (r != 0 || namelen > sizeof(name)) {
+        String = MR_make_string_const("""");
+    } else {
+        r = uv_ip4_name(&name, tmp, sizeof(tmp));
+        if (r == 0) {
+            MR_make_aligned_string_copy_msg(String, tmp, MR_ALLOC_SITE);
+        } else {
+            String = MR_make_string_const("""");
+        }
+    }
 ").
 
 %-----------------------------------------------------------------------------%
@@ -514,42 +599,6 @@ call_request_handler_pred(Pred, Request, !IO) :-
     [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
 "
     KeepAlive = (Client->should_keep_alive) ? MR_YES : MR_NO;
-").
-
-%-----------------------------------------------------------------------------%
-
-get_client_address_ipv4(Request, Res, !IO) :-
-    get_client_address_ipv4_2(Request ^ client, Address, !IO),
-    ( Address = "" ->
-        Res = no
-    ;
-        Res = yes(Address)
-    ).
-
-:- pred get_client_address_ipv4_2(client::in, string::out, io::di, io::uo) is det.
-
-:- pragma foreign_proc("C",
-    get_client_address_ipv4_2(Client::in, String::out, _IO0::di, _IO::uo),
-    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
-        may_not_duplicate],
-"
-    struct sockaddr_in name;
-    int namelen;
-    char tmp[sizeof ""255.255.255.255""];
-    int r;
-
-    namelen = sizeof(name);
-    r = uv_tcp_getpeername(&Client->tcp, (struct sockaddr *) &name, &namelen);
-    if (r != 0 || namelen > sizeof(name)) {
-        String = MR_make_string_const("""");
-    } else {
-        r = uv_ip4_name(&name, tmp, sizeof(tmp));
-        if (r == 0) {
-            MR_make_aligned_string_copy_msg(String, tmp, MR_ALLOC_SITE);
-        } else {
-            String = MR_make_string_const("""");
-        }
-    }
 ").
 
 %-----------------------------------------------------------------------------%
