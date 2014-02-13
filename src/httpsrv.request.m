@@ -17,6 +17,7 @@
 
 :- import_module mime_headers.
 :- import_module multipart_parser.
+:- import_module percent_decoding.
 :- import_module urlencoding.
 :- use_module rfc6265.
 
@@ -117,6 +118,32 @@ request_set_url(UrlString, !Req) :-
             !Req ^ path_decoded := MaybePathDecoded,
             !Req ^ query_params := QueryParams
         )
+    ).
+
+:- pred decode_path(url::in, maybe(string)::out) is det.
+
+decode_path(Url, MaybePathDecoded) :-
+    MaybePathRaw = Url ^ path_raw,
+    (
+        MaybePathRaw = yes(PathRaw),
+        percent_decode(PathRaw, PathDecoded)
+    ->
+        MaybePathDecoded = yes(PathDecoded)
+    ;
+        MaybePathDecoded = no
+    ).
+
+:- pred decode_query_parameters(url::in, assoc_list(string)::out) is det.
+
+decode_query_parameters(Url, Params) :-
+    MaybeQuery = Url ^ query_raw,
+    (
+        MaybeQuery = yes(Query),
+        parse_query_parameters(Query, ParamsPrime)
+    ->
+        Params = ParamsPrime
+    ;
+        Params = []
     ).
 
 :- pred request_set_cookies(request::in, request::out) is det.
