@@ -49,11 +49,14 @@
 :- import_module bool.
 :- import_module char.
 :- import_module int.
+:- import_module pair.
 :- import_module require.
 :- import_module string.
 
 :- import_module headers.
-:- import_module mime_headers.
+:- use_module rfc2045.
+:- use_module rfc2183.
+:- use_module rfc2822.
 
 :- pragma foreign_decl("C", local, "
     #include <string.h> /* memmem is GNU extension */
@@ -225,7 +228,8 @@ have_header_block(Buf, StartPos, EndPos, !PS, !IO) :-
     make_string_utf8(Buf, StartPos, EndPos, MaybeString, !IO),
     (
         MaybeString = yes(String),
-        ( mime_headers.parse_headers(String, Headers) ->
+        ( rfc2822.parse_fields(String, Fields) ->
+            Headers = init_headers_from_assoc_list(Fields),
             have_headers(Headers, !PS)
         ;
             !PS ^ state := error("error parsing headers")
@@ -239,13 +243,13 @@ have_header_block(Buf, StartPos, EndPos, !PS, !IO) :-
     multipart_parser(T)::in, multipart_parser(T)::out) is det <= callbacks(T).
 
 have_headers(Headers, !PS) :-
-    mime_headers.get_content_type(Headers, MediaType, _Params),
-    ( media_type_equals(MediaType, multipart_mixed) ->
+    get_content_type_or_default(Headers, MediaType, _Params),
+    ( MediaType = multipart_mixed ->
         % The encoding algorithm in the HTML5 spec avoids content type
         % multipart/mixed so supporting it is probably not a high priority.
         !PS ^ state := error("multipart/mixed not supported")
     ;
-        make_on_headers_complete_info(Headers, Info),
+        make_on_headers_complete_info(Headers, MediaType, Info),
         call_on_headers_complete(Info, Continue, !PS),
         (
             Continue = ok,
@@ -256,10 +260,26 @@ have_headers(Headers, !PS) :-
         )
     ).
 
-:- pred make_on_headers_complete_info(headers::in,
+:- pred get_content_type_or_default(headers::in, string::out, parameters::out)
+    is det.
+
+get_content_type_or_default(Headers, MediaType, Params) :-
+    (
+        search_field(Headers, content_type, Body),
+        rfc2822.parse_structured_field_body(Body, rfc2045.content_type_body,
+            Output)
+    ->
+        Output = MediaType - ParamsMap,
+        Params = init_parameters_from_map(ParamsMap)
+    ;
+        rfc2045.content_type_defaults(MediaType, ParamsMap),
+        Params = init_parameters_from_map(ParamsMap)
+    ).
+
+:- pred make_on_headers_complete_info(headers::in, string::in,
     on_headers_complete_info::out) is det.
 
-make_on_headers_complete_info(Headers, Info) :-
+make_on_headers_complete_info(Headers, MediaType, Info) :-
     ( search_content_disposition(Headers, Disposition, Params) ->
         MaybeDispositionType = yes(Disposition),
         ( search_parameter(Params, name, Name) ->
@@ -277,7 +297,6 @@ make_on_headers_complete_info(Headers, Info) :-
         MaybeName = no,
         MaybeFileName = no
     ),
-    get_content_type(Headers, media_type(MediaType), _ContentTypeParams),
     ( search_content_transfer_encoding(Headers, CTE) ->
         MaybeCTE = yes(CTE)
     ;
@@ -298,6 +317,14 @@ call_on_headers_complete(Info, Continue, PS0, PS) :-
     on_headers_complete(Info, Continue, UserData0, UserData),
     PS = PS0 ^ userdata := UserData.
 
+:- func content_type = string.
+
+content_type = "Content-Type".
+
+:- func multipart_mixed = string.
+
+multipart_mixed = "multipart/mixed".
+
 :- func name = string.
 
 name = "name".
@@ -305,10 +332,6 @@ name = "name".
 :- func filename = string.
 
 filename = "filename".
-
-:- func multipart_mixed = string.
-
-multipart_mixed = "multipart/mixed".
 
 %-----------------------------------------------------------------------------%
 
@@ -411,6 +434,35 @@ find_crlf_crlf(Buf, FoundPos, !BufPos, !IO) :-
         BufPos = BufPos0;
     }
 ").
+
+%-----------------------------------------------------------------------------%
+
+:- pred search_content_transfer_encoding(headers::in, string::out)
+    is semidet.
+
+search_content_transfer_encoding(Headers, Mechanism) :-
+    search_field(Headers, content_transfer_encoding, Body),
+    rfc2822.parse_structured_field_body(Body,
+        rfc2045.content_transfer_encoding_body, Mechanism).
+
+:- func content_transfer_encoding = string.
+
+content_transfer_encoding = "Content-Transfer-Encoding".
+
+%-----------------------------------------------------------------------------%
+
+:- pred search_content_disposition(headers::in, string::out, parameters::out)
+    is semidet.
+
+search_content_disposition(Headers, DispositionType, Params) :-
+    search_field(Headers, content_disposition_header, Body),
+    rfc2822.parse_structured_field_body(Body, rfc2183.content_disposition_body,
+        DispositionType - ParamsMap),
+    Params = init_parameters_from_map(ParamsMap).
+
+:- func content_disposition_header = string.
+
+content_disposition_header = "Content-Disposition".
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

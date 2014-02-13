@@ -27,9 +27,6 @@
 :- pred content_transfer_encoding_body(src::in, string::out,
     ps::in, ps::out) is semidet.
 
-:- pred is_valid_content_transfer_encoding_for_multipart(string::in)
-    is semidet.
-
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -123,10 +120,6 @@ content_type_defaults(MediaType, Params) :-
 content_transfer_encoding_body(Src, Mechanism, !PS) :-
     token(Src, Token, !PS),
     string.to_lower(Token, Mechanism). % case-insensitive
-
-is_valid_content_transfer_encoding_for_multipart("7bit").
-is_valid_content_transfer_encoding_for_multipart("8bit").
-is_valid_content_transfer_encoding_for_multipart("binary").
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

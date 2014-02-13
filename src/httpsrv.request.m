@@ -15,10 +15,12 @@
 
 :- import_module string.
 
-:- import_module mime_headers.
 :- import_module multipart_parser.
 :- import_module percent_decoding.
 :- import_module urlencoding.
+:- use_module rfc2045.
+:- use_module rfc2046.
+:- use_module rfc2822.
 :- use_module rfc6265.
 
 :- import_module httpsrv.formdata_accum.
@@ -166,8 +168,14 @@ request_set_cookies(!Req) :-
 request_set_body_stringish(Req0, String) = Req :-
     Headers = Req0 ^ headers,
     (
-        get_content_type(Headers, MediaType, _Params),
-        media_type_equals(MediaType, application_x_www_form_urlencoded),
+        search_field(Headers, content_type, ContentTypeBody),
+        % Hack: this is a HTTP header not a MIME header.
+        % One known difference is that [RFC 2616] 3.7 Media Types:
+        % "Linear white space (LWS) MUST NOT be used [...] between
+        % an attribute and its value."
+        rfc2822.parse_structured_field_body(ContentTypeBody,
+            rfc2045.content_type_body, MediaType - _Params),
+        MediaType = application_x_www_form_urlencoded,
         parse_form_urlencoded(String, Form)
     ->
         Body = form_urlencoded(Form)
@@ -175,6 +183,10 @@ request_set_body_stringish(Req0, String) = Req :-
         Body = string(String)
     ),
     Req = Req0 ^ body := Body.
+
+:- func content_type = string.
+
+content_type = "Content-Type".
 
 :- func application_x_www_form_urlencoded = string.
 
@@ -191,14 +203,28 @@ application_x_www_form_urlencoded = "application/x-www-form-urlencoded".
 
 request_search_multipart_formdata_boundary(Req, Boundary) :-
     Headers = Req ^ headers,
+    search_field(Headers, content_type, ContentTypeBody),
+
+    % Hack: this is a HTTP header not a MIME header.
+    % See also another instance above.
+    rfc2822.parse_structured_field_body(ContentTypeBody,
+        rfc2045.content_type_body, MediaType - ParamsMap),
     % XXX report errors, reject other multipart types
-    is_multipart_content_type(Headers, MaybeMultiPart),
-    MaybeMultiPart = multipart(MediaType, Boundary),
-    media_type_equals(MediaType, multipart_formdata).
+    MediaType = multipart_formdata,
+
+    Params = init_parameters_from_map(ParamsMap),
+    search_parameter(Params, boundary, Boundary),
+    rfc2046.is_valid_boundary(Boundary).
+    % [RFC 2616] HTTP, unlike MIME, does not use Content-Transfer-Encoding.
+    % So we don't have to check that.
 
 :- func multipart_formdata = string.
 
 multipart_formdata = "multipart/form-data".
+
+:- func boundary = string.
+
+boundary = "boundary".
 
 %-----------------------------------------------------------------------------%
 
