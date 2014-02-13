@@ -114,6 +114,9 @@
 :- pred set_response(client::in, request::in, status_code::in,
     list(response_header)::in, response_content::in, io::di, io::uo) is det.
 
+:- pred get_client_address_ipv4(client::in, maybe(string)::out, io::di, io::uo)
+    is det.
+
 :- type static_file.
 
 :- pred open_static_file(string::in, maybe_error(static_file)::out,
@@ -509,6 +512,42 @@ call_request_handler_pred(Pred, Client, Request, !IO) :-
     [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
 "
     KeepAlive = (Client->should_keep_alive) ? MR_YES : MR_NO;
+").
+
+%-----------------------------------------------------------------------------%
+
+get_client_address_ipv4(Client, Res, !IO) :-
+    get_client_address_ipv4_2(Client, Address, !IO),
+    ( Address = "" ->
+        Res = no
+    ;
+        Res = yes(Address)
+    ).
+
+:- pred get_client_address_ipv4_2(client::in, string::out, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    get_client_address_ipv4_2(Client::in, String::out, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
+    struct sockaddr_in name;
+    int namelen;
+    char tmp[sizeof ""255.255.255.255""];
+    int r;
+
+    namelen = sizeof(name);
+    r = uv_tcp_getpeername(&Client->tcp, (struct sockaddr *) &name, &namelen);
+    if (r != 0 || namelen > sizeof(name)) {
+        String = MR_make_string_const("""");
+    } else {
+        r = uv_ip4_name(&name, tmp, sizeof(tmp));
+        if (r == 0) {
+            MR_make_aligned_string_copy_msg(String, tmp, MR_ALLOC_SITE);
+        } else {
+            String = MR_make_string_const("""");
+        }
+    }
 ").
 
 %-----------------------------------------------------------------------------%

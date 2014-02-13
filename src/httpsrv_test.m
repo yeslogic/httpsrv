@@ -77,11 +77,13 @@ real_handler(Client, Request, !IO) :-
             Content = strings([Error])
         )
     ;
+        get_client_address_ipv4(Client, MaybeClientAddress, !IO),
         Status = ok_200,
         AdditionalHeaders = [set_cookie("my-cookie" - "my-cookie-value", [])],
         Headers = Request ^ headers,
         Body = Request ^ body,
         Content = strings([
+            "Client address: ", string(MaybeClientAddress), "\n",
             "Method: ", string(Method), "\n",
             "URL: ", string(Url), "\n",
             "Path: ", string(MaybePathDecoded), "\n",
