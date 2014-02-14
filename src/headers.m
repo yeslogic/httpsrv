@@ -9,6 +9,8 @@
 :- import_module list.
 :- import_module map.
 
+:- import_module case_insensitive.
+
     % RFC 822-style headers.
     % Field names are case-insensitive.
     % Field values may be case-sensitive or not.
@@ -24,25 +26,26 @@
 
 :- func init_headers = headers.
 
-    % The field names must be in lowercase.
-    %
-:- func init_headers_from_assoc_list(assoc_list(string, string)) = headers.
+:- func init_headers_from_assoc_list(assoc_list(case_insensitive, string))
+    = headers.
 
-:- pred add_header(string::in, string::in, headers::in, headers::out) is det.
+:- pred add_header(case_insensitive::in, string::in, headers::in, headers::out)
+    is det.
 
     % Return the body of the first field with the given name.
     %
-:- pred search_field(headers::in, string::in, string::out) is semidet.
+:- pred search_field(headers::in, case_insensitive::in, string::out)
+    is semidet.
 
     % Return the bodies of all fields which have the given name.
     %
-:- pred search_field_multi(headers::in, string::in, list(string)::out) is det.
+:- pred search_field_multi(headers::in, case_insensitive::in,
+    list(string)::out) is det.
 
-    % The parameter names must be in lowercase.
-    %
-:- func init_parameters_from_map(map(string, string)) = parameters.
+:- func init_parameters_from_map(map(case_insensitive, string)) = parameters.
 
-:- pred search_parameter(parameters::in, string::in, string::out) is semidet.
+:- pred search_parameter(parameters::in, case_insensitive::in, string::out)
+    is semidet.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -50,18 +53,14 @@
 :- implementation.
 
 :- import_module pair.
-:- import_module string.
 
-    % Header field names are case-insensitive and stored in lowercase.
     % (same as rfc2822.m)
     %
-:- type headers == assoc_list(string, string).
+:- type headers == assoc_list(case_insensitive, string).
 
-    % Parameter names are case-insensitive and stored in lowercase.
     % (same as rfc2045.m)
     %
-:- type parameters == map(string, string).
-:- type parameter == pair(string, string).
+:- type parameters == map(case_insensitive, string).
 
 %-----------------------------------------------------------------------------%
 
@@ -70,29 +69,26 @@ init_headers = [].
 init_headers_from_assoc_list(Fields) = Fields.
 
 add_header(Name, Body, Headers0, Headers) :-
-    string.to_lower(Name, NameLower),
     % XXX this is reversed
-    Headers = [NameLower - Body | Headers0].
+    Headers = [Name - Body | Headers0].
 
 search_field(Headers, SearchName, Body) :-
-    string.to_lower(SearchName, SearchNameLower),
-    assoc_list.search(Headers, SearchNameLower, Body).
+    assoc_list.search(Headers, SearchName, Body).
 
 search_field_multi(Headers, SearchName, Bodies) :-
-    string.to_lower(SearchName, SearchNameLower),
-    list.filter_map(match_field(SearchNameLower), Headers, Bodies).
+    list.filter_map(match_field(SearchName), Headers, Bodies).
 
-:- pred match_field(string::in, pair(string)::in, string::out) is semidet.
+:- pred match_field(case_insensitive::in, pair(case_insensitive, string)::in,
+    string::out) is semidet.
 
-match_field(SearchNameLower, SearchNameLower - Body, Body).
+match_field(SearchName, SearchName - Body, Body).
 
 %-----------------------------------------------------------------------------%
 
 init_parameters_from_map(Map) = Map.
 
 search_parameter(Params, SearchName, Value) :-
-    string.to_lower(SearchName, SearchNameLower),
-    map.search(Params, SearchNameLower, Value).
+    map.search(Params, SearchName, Value).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

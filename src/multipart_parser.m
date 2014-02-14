@@ -9,6 +9,7 @@
 :- import_module maybe.
 
 :- import_module buffer.
+:- import_module case_insensitive.
 
 %-----------------------------------------------------------------------------%
 
@@ -34,11 +35,11 @@
 
 :- type on_headers_complete_info
     --->    on_headers_complete_info(
-                content_disposition_type :: maybe(string),
+                content_disposition_type :: maybe(case_insensitive),
                 content_disposition_name :: maybe(string),
                 content_disposition_filename :: maybe(string),
-                content_type_media_type :: string,
-                content_transfer_encoding_mechanism :: maybe(string)
+                content_type_media_type :: case_insensitive,
+                content_transfer_encoding_mechanism :: maybe(case_insensitive)
             ).
 
 %-----------------------------------------------------------------------------%
@@ -53,6 +54,7 @@
 :- import_module require.
 :- import_module string.
 
+:- import_module case_insensitive.
 :- import_module headers.
 :- use_module rfc2045.
 :- use_module rfc2183.
@@ -262,8 +264,8 @@ have_headers(Headers, !PS) :-
         )
     ).
 
-:- pred get_content_type_or_default(headers::in, string::out, parameters::out)
-    is det.
+:- pred get_content_type_or_default(headers::in, case_insensitive::out,
+    parameters::out) is det.
 
 get_content_type_or_default(Headers, MediaType, Params) :-
     (
@@ -278,7 +280,7 @@ get_content_type_or_default(Headers, MediaType, Params) :-
         Params = init_parameters_from_map(ParamsMap)
     ).
 
-:- pred make_on_headers_complete_info(headers::in, string::in,
+:- pred make_on_headers_complete_info(headers::in, case_insensitive::in,
     on_headers_complete_info::out) is det.
 
 make_on_headers_complete_info(Headers, MediaType, Info) :-
@@ -319,21 +321,21 @@ call_on_headers_complete(Info, Continue, PS0, PS) :-
     on_headers_complete(Info, Continue, UserData0, UserData),
     PS = PS0 ^ userdata := UserData.
 
-:- func content_type = string.
+:- func content_type = case_insensitive.
 
-content_type = "Content-Type".
+content_type = case_insensitive("content-type").
 
-:- func multipart_mixed = string.
+:- func multipart_mixed = case_insensitive.
 
-multipart_mixed = "multipart/mixed".
+multipart_mixed = case_insensitive("multipart/mixed").
 
-:- func name = string.
+:- func name = case_insensitive.
 
-name = "name".
+name = case_insensitive("name").
 
-:- func filename = string.
+:- func filename = case_insensitive.
 
-filename = "filename".
+filename = case_insensitive("filename").
 
 %-----------------------------------------------------------------------------%
 
@@ -439,7 +441,7 @@ find_crlf_crlf(Buf, FoundPos, !BufPos, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-:- pred search_content_transfer_encoding(headers::in, string::out)
+:- pred search_content_transfer_encoding(headers::in, case_insensitive::out)
     is semidet.
 
 search_content_transfer_encoding(Headers, Mechanism) :-
@@ -447,14 +449,14 @@ search_content_transfer_encoding(Headers, Mechanism) :-
     rfc2822.parse_structured_field_body(Body,
         rfc2045.content_transfer_encoding_body, Mechanism).
 
-:- func content_transfer_encoding = string.
+:- func content_transfer_encoding = case_insensitive.
 
-content_transfer_encoding = "Content-Transfer-Encoding".
+content_transfer_encoding = case_insensitive("content-transfer-encoding").
 
 %-----------------------------------------------------------------------------%
 
-:- pred search_content_disposition(headers::in, string::out, parameters::out)
-    is semidet.
+:- pred search_content_disposition(headers::in, case_insensitive::out,
+    parameters::out) is semidet.
 
 search_content_disposition(Headers, DispositionType, Params) :-
     search_field(Headers, content_disposition_header, Body),
@@ -462,9 +464,9 @@ search_content_disposition(Headers, DispositionType, Params) :-
         DispositionType - ParamsMap),
     Params = init_parameters_from_map(ParamsMap).
 
-:- func content_disposition_header = string.
+:- func content_disposition_header = case_insensitive.
 
-content_disposition_header = "Content-Disposition".
+content_disposition_header = case_insensitive("content-disposition").
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

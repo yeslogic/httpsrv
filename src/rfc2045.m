@@ -9,12 +9,11 @@
 :- import_module pair.
 :- import_module parsing_utils.
 
-    % Parameter names are case-insensitive and stored in lowercase.
-    %
-:- type parameters == map(string, string).
-:- type parameter == pair(string, string).
+:- import_module case_insensitive.
 
-:- pred content_type_body(src::in, pair(string, parameters)::out,
+:- type parameters == map(case_insensitive, string).
+
+:- pred content_type_body(src::in, pair(case_insensitive, parameters)::out,
     ps::in, ps::out) is semidet.
 
 :- pred zero_or_more_parameters_list(src::in, parameters::out, ps::in, ps::out)
@@ -22,9 +21,9 @@
 
 :- pred token(src::in, string::out, ps::in, ps::out) is semidet.
 
-:- pred content_type_defaults(string::out, parameters::out) is det.
+:- pred content_type_defaults(case_insensitive::out, parameters::out) is det.
 
-:- pred content_transfer_encoding_body(src::in, string::out,
+:- pred content_transfer_encoding_body(src::in, case_insensitive::out,
     ps::in, ps::out) is semidet.
 
 %-----------------------------------------------------------------------------%
@@ -49,14 +48,14 @@ content_type_body(Src, MediaType - Params, !PS) :-
     zero_or_more_parameters_list(Src, Params, !PS),
     eof(Src, _, !PS).
 
-:- pred media_type(src::in, string::out, ps::in, ps::out) is semidet.
+:- pred media_type(src::in, case_insensitive::out, ps::in, ps::out) is semidet.
 
 media_type(Src, MediaType, !PS) :-
     % The RFC is more restrictive.
     token(Src, Type, !PS),
     punct("/", Src, _, !PS),
     token(Src, SubType, !PS),
-    string.to_lower(Type ++ "/" ++ SubType, MediaType). % case-insensitive
+    MediaType = from_string(Type ++ "/" ++ SubType).
 
 zero_or_more_parameters_list(Src, Params, !PS) :-
     zero_or_more(semicolon_then_parameter, Src, _, map.init, Params, !PS).
@@ -72,11 +71,12 @@ semicolon_then_parameter(Src, unit, !Params, !PS) :-
     % Do not allow duplicate parameter names.
     map.insert(Attrib, Value, !Params).
 
-:- pred parameter_attribute(src::in, string::out, ps::in, ps::out) is semidet.
+:- pred parameter_attribute(src::in, case_insensitive::out, ps::in, ps::out)
+    is semidet.
 
 parameter_attribute(Src, Attrib, !PS) :-
     token(Src, Token, !PS),
-    string.to_lower(Token, Attrib). % case-insensitive
+    Attrib = from_string(Token).
 
 :- pred parameter_value(src::in, string::out, ps::in, ps::out) is semidet.
 
@@ -110,8 +110,8 @@ tspecial('/'). tspecial('['). tspecial(']'). tspecial('?'). tspecial('=').
 % 5.2. Content-Type Defaults
 
 content_type_defaults(MediaType, Params) :-
-    MediaType = "text/plain",
-    Params = map.singleton("charset", "us-ascii").
+    MediaType = case_insensitive("text/plain"),
+    Params = map.singleton(case_insensitive("charset"), "us-ascii").
 
 %-----------------------------------------------------------------------------%
 
@@ -119,7 +119,7 @@ content_type_defaults(MediaType, Params) :-
 
 content_transfer_encoding_body(Src, Mechanism, !PS) :-
     token(Src, Token, !PS),
-    string.to_lower(Token, Mechanism). % case-insensitive
+    Mechanism = from_string(Token).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

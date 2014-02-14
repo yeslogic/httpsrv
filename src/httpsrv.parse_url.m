@@ -55,7 +55,7 @@ parse_url_and_host_header(Headers, UrlString, Url) :-
         Url = url_init
     ;
         parse_url(UrlString, Url0),
-        search_field(Headers, "Host", HostFieldValue),
+        search_field(Headers, host, HostFieldValue),
         ( is_absolute_url(Url0) ->
             % Ignore the Host header field.
             % Strictly speaking we are supposed to enforce its existence.
@@ -66,6 +66,10 @@ parse_url_and_host_header(Headers, UrlString, Url) :-
             Url = Url1 ^ port := canonicalise_maybe_port(MaybePort)
         )
     ).
+
+:- func host = case_insensitive.
+
+host = case_insensitive("host").
 
 :- pred is_absolute_url(url::in) is semidet.
 

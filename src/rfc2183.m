@@ -8,17 +8,16 @@
 :- import_module pair.
 :- import_module parsing_utils.
 
+:- import_module case_insensitive.
 :- import_module rfc2045.
 
-:- pred content_disposition_body(src::in, pair(string, parameters)::out,
-    ps::in, ps::out) is semidet.
+:- pred content_disposition_body(src::in,
+    pair(case_insensitive, parameters)::out, ps::in, ps::out) is semidet.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
-
-:- import_module string.
 
 content_disposition_body(Src, DispositionType - Params, !PS) :-
     disposition_type(Src, DispositionType, !PS),
@@ -36,11 +35,12 @@ content_disposition_body(Src, DispositionType - Params, !PS) :-
     zero_or_more_parameters_list(Src, Params, !PS),
     eof(Src, _, !PS).
 
-:- pred disposition_type(src::in, string::out, ps::in, ps::out) is semidet.
+:- pred disposition_type(src::in, case_insensitive::out, ps::in, ps::out)
+    is semidet.
 
 disposition_type(Src, DispositionType, !PS) :-
     token(Src, Token, !PS),
-    string.to_lower(Token, DispositionType). % case-insensitive
+    DispositionType = from_string(Token).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

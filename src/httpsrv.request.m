@@ -49,7 +49,7 @@ request_init(Client) =
 
 request_add_header(Req0, Name, Body) = Req :-
     Req0 ^ headers = Headers0,
-    add_header(Name, Body, Headers0, Headers),
+    add_header(from_string(Name), Body, Headers0, Headers),
     Req = Req0 ^ headers := Headers.
 
 %-----------------------------------------------------------------------------%
@@ -61,12 +61,12 @@ request_add_header(Req0, Name, Body) = Req :-
 
 request_get_expect_header(Req) = Result :-
     Headers = Req ^ headers,
-    ( search_field(Headers, "Expect", Body) ->
+    ( search_field(Headers, expect, Body) ->
         % Strictly speaking the expectation value can be a comma separated list
         % and "100-continue" is one of the possible elements of that list.
         % But at least HTTP field values may NOT have comments unless
         % specifically stated (unlike RFC 822).
-        ( string_equal_ci(Body, "100-continue") ->
+        ( string.to_lower(Body, "100-continue") ->
             Result = 1
         ;
             Result = -1
@@ -75,11 +75,9 @@ request_get_expect_header(Req) = Result :-
         Result = 0
     ).
 
-:- pred string_equal_ci(string::in, string::in) is semidet.
+:- func expect = case_insensitive.
 
-string_equal_ci(A, B) :-
-    string.to_lower(A, Lower),
-    string.to_lower(B, Lower).
+expect = case_insensitive("expect").
 
 %-----------------------------------------------------------------------------%
 
@@ -152,11 +150,15 @@ decode_query_parameters(Url, Params) :-
 
 request_set_cookies(!Req) :-
     % Parse all Cookie: header values, dropping anything we can't recognise.
-    search_field_multi(!.Req ^ headers, "Cookie", CookieHeaderValues),
+    search_field_multi(!.Req ^ headers, cookie, CookieHeaderValues),
     list.filter_map(rfc6265.parse_cookie_header_value, CookieHeaderValues,
         Cookiess),
     list.condense(Cookiess, Cookies),
     !Req ^ cookies := Cookies.
+
+:- func cookie = case_insensitive.
+
+cookie = case_insensitive("cookie").
 
 %-----------------------------------------------------------------------------%
 
@@ -184,13 +186,14 @@ request_set_body_stringish(Req0, String) = Req :-
     ),
     Req = Req0 ^ body := Body.
 
-:- func content_type = string.
+:- func content_type = case_insensitive.
 
-content_type = "Content-Type".
+content_type = case_insensitive("content-type").
 
-:- func application_x_www_form_urlencoded = string.
+:- func application_x_www_form_urlencoded = case_insensitive.
 
-application_x_www_form_urlencoded = "application/x-www-form-urlencoded".
+application_x_www_form_urlencoded =
+    case_insensitive("application/x-www-form-urlencoded").
 
 %-----------------------------------------------------------------------------%
 
@@ -218,13 +221,13 @@ request_search_multipart_formdata_boundary(Req, Boundary) :-
     % [RFC 2616] HTTP, unlike MIME, does not use Content-Transfer-Encoding.
     % So we don't have to check that.
 
-:- func multipart_formdata = string.
+:- func multipart_formdata = case_insensitive.
 
-multipart_formdata = "multipart/form-data".
+multipart_formdata = case_insensitive("multipart/form-data").
 
-:- func boundary = string.
+:- func boundary = case_insensitive.
 
-boundary = "boundary".
+boundary = case_insensitive("boundary").
 
 %-----------------------------------------------------------------------------%
 

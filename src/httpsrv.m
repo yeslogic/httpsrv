@@ -12,6 +12,7 @@
 :- import_module pair.
 :- import_module time.
 
+:- import_module case_insensitive.
 :- import_module headers.
 
 :- include_module httpsrv.status.
@@ -97,10 +98,10 @@
 
 :- type formdata
     --->    formdata(
-                disposition                 :: string,
+                disposition                 :: case_insensitive,
                 filename                    :: maybe(string),
-                media_type                  :: string,
-                content_transfer_encoding   :: maybe(string),
+                media_type                  :: case_insensitive,
+                content_transfer_encoding   :: maybe(case_insensitive),
                 content                     :: formdata_content
             ).
 

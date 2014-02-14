@@ -133,7 +133,7 @@ present_formdata(Name - FormData) = L :-
         "--------\n",
         "name=", Name, "\n",
         "filename=", string(FileName), "\n",
-        "mediatype=", MediaType, "\n",
+        "mediatype=", string(MediaType), "\n",
         "content-transfer-encoding=", string(CTE), "\n",
         "length=", from_int(ContentLength), "\n"
         | PresentString

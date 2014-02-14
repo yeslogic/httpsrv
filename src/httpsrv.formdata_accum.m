@@ -40,7 +40,8 @@ init = formdata_accum([], "", formdata_init).
 
 :- func formdata_init = formdata.
 
-formdata_init = formdata("", no, "", no, []).
+formdata_init =
+    formdata(case_insensitive(""), no, case_insensitive(""), no, []).
 
 %-----------------------------------------------------------------------------%
 
@@ -122,9 +123,9 @@ on_part_end(Acc0, Acc) :-
 
 %-----------------------------------------------------------------------------%
 
-:- func form_data = string.
+:- func form_data = case_insensitive.
 
-form_data = "form-data".
+form_data = case_insensitive("form-data").
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

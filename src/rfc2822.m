@@ -9,9 +9,9 @@
 :- import_module pair.
 :- import_module parsing_utils.
 
-    % Header field names are case-insensitive and stored in lowercase.
-    %
-:- type field == pair(string, string).
+:- import_module case_insensitive.
+
+:- type field == pair(case_insensitive, string).
 
 :- pred parse_fields(string::in, list(field)::out) is semidet.
 
@@ -48,7 +48,8 @@ parse_fields(Input, Fields) :-
 no_skip_whitespace(_Src, unit, !PS) :-
     semidet_true.
 
-:- pred field(src::in, pair(string, string)::out, ps::in, ps::out) is semidet.
+:- pred field(src::in, pair(case_insensitive, string)::out, ps::in, ps::out)
+    is semidet.
 
 field(Src, FieldName - FieldBody, !PS) :-
     field_name(Src, FieldName, !PS),
@@ -58,11 +59,11 @@ field(Src, FieldName - FieldBody, !PS) :-
     field_body(Src, FieldBody, !PS),
     crlf(Src, !PS).
 
-:- pred field_name(src::in, string::out, ps::in, ps::out) is semidet.
+:- pred field_name(src::in, case_insensitive::out, ps::in, ps::out) is semidet.
 
 field_name(Src, FieldName, !PS) :-
     one_or_more_chars_to_string(field_name_char, Src, Word, !PS),
-    string.to_lower(Word, FieldName). % case-insensitive
+    FieldName = from_string(Word).
 
 :- pred field_name_char(char::in) is semidet.
 
