@@ -143,7 +143,7 @@ client_write_417_expectation_failed(client_t *client);
 static void
 client_after_write_417_expectation_failed(uv_write_t *req, int status);
 
-static void
+static bool
 client_set_request_body(client_t *client);
 
 static void

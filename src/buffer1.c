@@ -124,6 +124,54 @@ make_string_utf8(const char *buf, size_t off, size_t len, MR_bool *valid)
 }
 
 MR_String
+buffer_to_string_iso_8859_1(buffer_t *buf, MR_bool *valid)
+{
+    return make_string_iso_8859_1(buf->data, 0, buf->len, valid);
+}
+
+MR_String
+make_string_iso_8859_1(const char *buf, size_t off, size_t len, MR_bool *valid)
+{
+    MR_String s;
+    size_t enclen;
+    size_t i;
+
+    /* Count the code units required for UTF-8 encoding. */
+    enclen = 0;
+    for (i = 0; i < len; i++) {
+        const unsigned char uc = buf[off + i];
+        if (uc == 0) {
+            /* Do not allow embedded NULs. */
+            *valid = MR_FALSE;
+            return MR_make_string_const("");
+        }
+        if (uc <= 0x7f) {
+            enclen += 1;
+        } else {
+            enclen += 2;
+        }
+    }
+
+    MR_allocate_aligned_string_msg(s, enclen, MR_ALLOC_SITE_NONE);
+
+    if (enclen == len) {
+        /* Fast path: only ASCII. */
+        memcpy(s, buf + off, len);
+    } else {
+        size_t encoff = 0;
+        for (i = 0; i < len; i++) {
+            const unsigned char uc = buf[off + i];
+            encoff += MR_utf8_encode(s + encoff, uc);
+        }
+        assert(encoff == enclen);
+    }
+
+    s[enclen] = '\0';
+    *valid = MR_TRUE;
+    return s;
+}
+
+MR_String
 buffers_to_string_utf8(MR_Word bufs, size_t total_len, MR_bool *valid)
 {
     MR_String s;

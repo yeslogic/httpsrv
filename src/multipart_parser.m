@@ -225,6 +225,8 @@ execute(_Buf, !BufPos, !PS, !IO) :-
     <= callbacks(T).
 
 have_header_block(Buf, StartPos, EndPos, !PS, !IO) :-
+    % MIME headers should be restricted to US-ASCII but browsers do send
+    % unencoded octets, and those octets can be UTF-8 if we ask. That's nice.
     make_string_utf8(Buf, StartPos, EndPos, MaybeString, !IO),
     (
         MaybeString = yes(String),
