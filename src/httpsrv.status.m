@@ -35,12 +35,14 @@
     ;       unsupported_media_type_415
     ;       requested_range_not_satisfiable_416
     ;       expectation_failed_417
+    ;       unprocessable_entity_422
     ;       internal_server_error_500
     ;       not_implemented_501
     ;       bad_gateway_502
     ;       service_unavailable_503
     ;       gateway_timeout_504
-    ;       http_version_not_supported_505.
+    ;       http_version_not_supported_505
+    ;       insufficient_storage_507.
 
 :- func text(status_code) = string.
 
@@ -78,12 +80,14 @@ text(request_uri_too_long_414) = "414 Request-URI Too Long".
 text(unsupported_media_type_415) = "415 Unsupported Media Type".
 text(requested_range_not_satisfiable_416) = "416 Requested Range Not Satisfiable".
 text(expectation_failed_417) = "417 Expectation Failed".
+text(unprocessable_entity_422) = "422 Unprocessable Entity".
 text(internal_server_error_500) = "500 Internal Server Error".
 text(not_implemented_501) = "501 Not Implemented".
 text(bad_gateway_502) = "502 Bad Gateway".
 text(service_unavailable_503) = "503 Service Unavailable".
 text(gateway_timeout_504) = "504 Gateway Timeout".
 text(http_version_not_supported_505) = "505 HTTP Version Not Supported".
+text(insufficient_storage_507) = "507 Insufficient Storage".
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
