@@ -24,6 +24,7 @@
 
 :- import_module httpsrv.
 :- import_module httpsrv.status.
+:- import_module httpsrv.signal.
 
 %-----------------------------------------------------------------------------%
 
@@ -289,32 +290,6 @@ periodic_handler(Id, !IO) :-
     [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io],
 "
     usleep(N);
-").
-
-%-----------------------------------------------------------------------------%
-
-:- pragma foreign_decl("C", local, "
-#include ""mercury_signal.h""
-
-static void     handle_sigpipe(int signum);
-").
-
-:- pred ignore_sigpipe(io::di, io::uo) is det.
-
-:- pragma foreign_proc("C",
-    ignore_sigpipe(_IO0::di, _IO::uo),
-    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
-        may_not_duplicate],
-"
-    MR_setup_signal(SIGPIPE, handle_sigpipe, MR_FALSE,
-        ""cannot install signal handler (SIGPIPE)"");
-").
-
-:- pragma foreign_code("C", "
-static void handle_sigpipe(int signum)
-{
-    fprintf(stderr, ""Ignoring signal %d (SIGPIPE).\\n"", signum);
-}
 ").
 
 %-----------------------------------------------------------------------------%

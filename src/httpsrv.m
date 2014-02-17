@@ -15,6 +15,7 @@
 :- import_module case_insensitive.
 :- import_module headers.
 
+:- include_module httpsrv.signal.
 :- include_module httpsrv.status.
 :- import_module httpsrv.status.
 
