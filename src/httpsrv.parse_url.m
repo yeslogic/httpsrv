@@ -74,7 +74,7 @@ host = case_insensitive("host").
 :- pred is_absolute_url(url::in) is semidet.
 
 is_absolute_url(Url) :-
-    Url ^ schema = yes(_).
+    Url ^ scheme = yes(_).
 
 :- func canonicalise_maybe_port(maybe(string)) = maybe(string).
 
@@ -101,13 +101,13 @@ parse_url(Input, Url) :-
     parse_url_2(Input, ParseResult),
     require_det (
         MaybeField = maybe_field(Input, ParseResult),
-        MaybeField('UF_SCHEMA', MaybeSchema),
+        MaybeField('UF_SCHEMA', MaybeScheme),
         MaybeField('UF_HOST', MaybeHost),
         MaybeField('UF_PORT', MaybePort),
         MaybeField('UF_PATH', MaybePathRaw),
         MaybeField('UF_QUERY', MaybeQuery),
         MaybeField('UF_FRAGMENT', MaybeFragment),
-        Url = url(MaybeSchema, MaybeHost, MaybePort, MaybePathRaw, MaybeQuery,
+        Url = url(MaybeScheme, MaybeHost, MaybePort, MaybePathRaw, MaybeQuery,
             MaybeFragment)
     ).
 

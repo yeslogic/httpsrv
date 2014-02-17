@@ -53,7 +53,7 @@
 
 :- type url
     --->    url(
-                schema      :: maybe(string),
+                scheme      :: maybe(string),
                 host        :: maybe(string),
                 port        :: maybe(string),
                 path_raw    :: maybe(string),
