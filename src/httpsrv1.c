@@ -471,7 +471,7 @@ client_on_alloc(uv_handle_t *handle, size_t suggested_size)
     client_t *client = client_from_stream_data(stream);
     char *ptr;
 
-#if 1 /* pathological */
+#if 0 /* pathological */
     suggested_size = 1;
 #endif
 
