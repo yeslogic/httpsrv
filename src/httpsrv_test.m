@@ -25,9 +25,6 @@
 :- import_module httpsrv.
 :- import_module httpsrv.status.
 
-:- type response
-    --->    response(status_code, list(response_header), response_content).
-
 %-----------------------------------------------------------------------------%
 
 main(!IO) :-
@@ -75,8 +72,7 @@ real_handler(Request, !IO) :-
     ;
         echo_handler(Request, Response, !IO)
     ),
-    Response = response(Status, AdditionalHeaders, Content),
-    set_response(Request, Status, AdditionalHeaders, Content, !IO),
+    set_response(Request, Response, !IO),
     cc_multi_equal(!IO).
 
 %-----------------------------------------------------------------------------%

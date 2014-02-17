@@ -119,6 +119,9 @@
 
 % Setting the response
 
+:- type response
+    --->    response(status_code, list(response_header), response_content).
+
     % NOTE: for now, the user is responsible for any necessary escaping!
     %
 :- type response_header
@@ -143,8 +146,7 @@
     --->    strings(list(string))
     ;       file(static_file).
 
-:- pred set_response(request::in, status_code::in, list(response_header)::in,
-    response_content::in, io::di, io::uo) is det.
+:- pred set_response(request::in, response::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 
@@ -338,8 +340,8 @@ write_formdata_content_to_file(Path, Bufs, Res, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
-set_response(Request, Status, AdditionalHeaders, Content, !IO) :-
-    response.set_response(Request, Status, AdditionalHeaders, Content, !IO).
+set_response(Request, Response, !IO) :-
+    response.set_response(Request, Response, !IO).
 
 %-----------------------------------------------------------------------------%
 

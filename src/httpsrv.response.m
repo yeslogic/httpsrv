@@ -5,8 +5,7 @@
 
 :- interface.
 
-:- pred set_response(request::in, status_code::in, list(response_header)::in,
-    response_content::in, io::di, io::uo) is det.
+:- pred set_response(request::in, response::in, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -26,7 +25,7 @@
 
 %-----------------------------------------------------------------------------%
 
-set_response(Request, Status, AdditionalHeaders, Content, !IO) :-
+set_response(Request, response(Status, AdditionalHeaders, Content), !IO) :-
     Client = Request ^ client,
     time(Time, !IO),
     HttpDate = timestamp_to_http_date(Time),
