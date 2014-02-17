@@ -16,7 +16,8 @@
 
 enum {
     DAEMON_MAGIC = ID('S','C','R','Y'), /* oOoOoo... */
-    CLIENT_MAGIC = ID('C','L','N','T')
+    CLIENT_MAGIC = ID('C','L','N','T'),
+    PERIODIC_MAGIC = ID('P','R','D','C')
 };
 
 enum {
@@ -175,6 +176,14 @@ client_from_fs(uv_fs_t *x)
     return client;
 }
 
+static struct periodic *
+periodic_from_handle_data(uv_handle_t *x)
+{
+    struct periodic *periodic = x->data;
+    assert(periodic && periodic->magic == PERIODIC_MAGIC);
+    return periodic;
+}
+
 /*
 ** Utilities
 */
@@ -238,6 +247,7 @@ daemon_setup(MR_Word request_handler,
     daemon->parser_settings.on_message_complete = client_on_message_complete;
     daemon->request_handler = request_handler;
     daemon->next_client_id = 1;
+    daemon->periodics = NULL;
 
     r = uv_listen(stream_from_tcp(&daemon->server), back_log,
         server_on_connect);
@@ -263,6 +273,8 @@ daemon_cleanup(daemon_t *daemon)
         uv_close(handle_from_tcp(&daemon->server), NULL);
     }
 
+    daemon_cleanup_periodics(daemon);
+
     uv_run(daemon->loop, UV_RUN_DEFAULT);
 
     /* uv_print_all_handles(daemon->loop); */
@@ -270,6 +282,41 @@ daemon_cleanup(daemon_t *daemon)
     uv_loop_delete(daemon->loop);
 
     MR_GC_free(daemon);
+}
+
+static void
+daemon_add_periodic(daemon_t *daemon, MR_Integer milliseconds,
+    MR_Word periodic_handler)
+{
+    struct periodic *periodic;
+
+    periodic = MR_GC_NEW(struct periodic);
+    periodic->magic = PERIODIC_MAGIC;
+    uv_timer_init(daemon->loop, &periodic->timer);
+    periodic->timer.data = periodic;
+    periodic->handler = periodic_handler;
+    periodic->next = daemon->periodics;
+    daemon->periodics = periodic;
+
+    uv_update_time(daemon->loop);
+    uv_timer_start(&periodic->timer, daemon_on_periodic_timer,
+        milliseconds, milliseconds);
+
+    LOG("[srv] add periodic: now=%ld, milliseconds=%ld\n",
+        uv_now(daemon->loop), milliseconds);
+}
+
+static void
+daemon_cleanup_periodics(daemon_t *daemon)
+{
+    struct periodic *periodic;
+
+    while ((periodic = daemon->periodics)) {
+        uv_close(handle_from_timer(&periodic->timer), NULL);
+        daemon->periodics = periodic->next;
+    }
+
+    assert(daemon->periodics == NULL);
 }
 
 /*
@@ -335,16 +382,36 @@ static void
 daemon_on_signal(uv_signal_t *signal, int status)
 {
     daemon_t *daemon = daemon_from_signal_data(signal);
+    struct periodic *periodic;
 
     LOG("[srv] received signal %d\n", signal->signum);
 
-    if (daemon->state == DAEMON_RUNNING) {
-        daemon->state = DAEMON_STOPPING;
-        uv_close(handle_from_tcp(&daemon->server), NULL);
-        /* Unref signal handles so they do not prevent the loop finishing. */
-        uv_unref(handle_from_signal(&daemon->signal1));
-        uv_unref(handle_from_signal(&daemon->signal2));
+    if (daemon->state != DAEMON_RUNNING) {
+        return;
     }
+
+    daemon->state = DAEMON_STOPPING;
+    uv_close(handle_from_tcp(&daemon->server), NULL);
+
+    /* Unref signal handles so they do not prevent the loop finishing. */
+    uv_unref(handle_from_signal(&daemon->signal1));
+    uv_unref(handle_from_signal(&daemon->signal2));
+
+    /* Stop periodic timers immediately. */
+    for (periodic = daemon->periodics; periodic; periodic = periodic->next) {
+        uv_timer_stop(&periodic->timer);
+    }
+}
+
+static void
+daemon_on_periodic_timer(uv_timer_t *timer, int status)
+{
+    struct periodic *periodic = periodic_from_handle_data(
+        handle_from_timer(timer));
+
+    LOG("[srv] periodic timer\n");
+
+    call_periodic_handler_pred(periodic->handler);
 }
 
 static void

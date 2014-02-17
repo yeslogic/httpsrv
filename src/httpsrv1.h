@@ -27,6 +27,14 @@ struct daemon {
     http_parser_settings parser_settings;
     MR_Word request_handler;
     unsigned next_client_id;    /* for debugging */
+    struct periodic *periodics;
+};
+
+struct periodic {
+    unsigned magic;             /* PERIODIC_MAGIC */
+    uv_timer_t timer;
+    MR_Word handler;
+    struct periodic *next;
 };
 
 enum last_header_cb {
@@ -87,7 +95,17 @@ static void
 daemon_cleanup(daemon_t *daemon);
 
 static void
+daemon_add_periodic(daemon_t *daemon, MR_Integer milliseconds,
+    MR_Word periodic_handler);
+
+static void
+daemon_cleanup_periodics(daemon_t *daemon);
+
+static void
 daemon_on_signal(uv_signal_t *signal, int status);
+
+static void
+daemon_on_periodic_timer(uv_timer_t *timer, int status);
 
 static void
 server_on_connect(uv_stream_t *server_handle, int status);

@@ -37,6 +37,8 @@ main(!IO) :-
     setup(request_handler, Settings, Res, !IO),
     (
         Res = ok(Daemon),
+        add_periodic(Daemon, 5000, periodic_handler("A"), !IO),
+        add_periodic(Daemon, 10000, periodic_handler("B"), !IO),
         io.format("Started server on %s port %d\n",
             [s(BindAddress), i(Port)], !IO),
         run(Daemon, !IO),
@@ -268,6 +270,15 @@ make_location(OrigUrl, FilePath) = AbsUrl :-
         HostPort = Host
     ),
     AbsUrl = Scheme ++ "://" ++ HostPort ++ "/" ++ FilePath.
+
+%-----------------------------------------------------------------------------%
+
+:- pred periodic_handler(string::in, io::di, io::uo) is det.
+
+periodic_handler(Id, !IO) :-
+    io.format("periodic handler %s - begin\n", [s(Id)], !IO),
+    usleep(100000, !IO),
+    io.format("periodic handler %s - end\n", [s(Id)], !IO).
 
 %-----------------------------------------------------------------------------%
 

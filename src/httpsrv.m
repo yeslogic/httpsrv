@@ -32,8 +32,21 @@
 :- type request_handler == pred(request, io, io).
 :- inst request_handler == (pred(in, di, uo) is cc_multi).
 
+:- type periodic_handler == pred(io, io).
+:- inst periodic_handler == (pred(di, uo) is det).
+
 :- pred setup(request_handler::in(request_handler), list(server_setting)::in,
     maybe_error(daemon)::out, io::di, io::uo) is det.
+
+    % add_periodic(Daemon, Millisecs, Handler):
+    %
+    % Add a handler to be called roughly every Millisecs passed.
+    % Periodic handlers are run on the main thread so will block the server
+    % loop.  Doing the work asynchronously on another thread may be possible,
+    % but beware that the server could be stopped in the mean time.
+    %
+:- pred add_periodic(daemon::in, int::in,
+    periodic_handler::in(periodic_handler), io::di, io::uo) is det.
 
 :- pred run(daemon::in, io::di, io::uo) is det.
 
@@ -280,6 +293,27 @@ find([T | Ts], P, Default) =
     ;
         find(Ts, P, Default)
     ).
+
+%-----------------------------------------------------------------------------%
+
+:- pragma foreign_proc("C",
+    add_periodic(Daemon::in, Millisecs::in, Handler::in(periodic_handler),
+        _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
+    daemon_add_periodic(Daemon, Millisecs, Handler);
+").
+
+:- pred call_periodic_handler_pred(periodic_handler::in(periodic_handler),
+    io::di, io::uo) is det.
+
+:- pragma foreign_export("C",
+    call_periodic_handler_pred(in(periodic_handler), di, uo),
+    "call_periodic_handler_pred").
+
+call_periodic_handler_pred(Pred, !IO) :-
+    Pred(!IO).
 
 %-----------------------------------------------------------------------------%
 
