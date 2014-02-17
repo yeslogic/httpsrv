@@ -5,6 +5,8 @@
 
 :- interface.
 
+:- include_module buffer.disk.
+
 :- import_module io.
 :- import_module list.
 :- import_module maybe.

@@ -40,6 +40,9 @@ render(H) = L :-
         H = content_disposition(DispositionType),
         L = ["Content-Disposition: ", DispositionType]
     ;
+        H = location(URI),
+        L = ["Location: ", URI]
+    ;
         H = set_cookie(Name - Value, Attrs),
         L = ["Set-Cookie: ", Name, "=", Value | render_cookie_attrs(Attrs)]
     ;

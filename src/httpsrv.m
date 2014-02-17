@@ -112,6 +112,9 @@
 :- pred formdata_content_to_string(formdata_content::in, string::out)
     is semidet.
 
+:- pred write_formdata_content_to_file(string::in, formdata_content::in,
+    maybe_error::out, io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 
 % Setting the response
@@ -123,6 +126,7 @@
     ;       content_type(string)
     ;       content_type_charset_utf8(string)
     ;       content_disposition(string)
+    ;       location(string)
     ;       set_cookie(pair(string), list(cookie_attribute))
     ;       x_content_type_options_nosniff
     ;       custom(pair(string), assoc_list(string)).
@@ -160,6 +164,7 @@
 :- import_module time.
 
 :- import_module buffer.
+:- import_module buffer.disk.
 
 :- include_module httpsrv.formdata_accum.
 :- include_module httpsrv.parse_url.
@@ -327,6 +332,9 @@ formdata_content_length(Content) = total_length(Content).
 
 formdata_content_to_string(Bufs, String) :-
     buffers_to_string_utf8(Bufs, String).
+
+write_formdata_content_to_file(Path, Bufs, Res, !IO) :-
+    write_to_file(Path, Bufs, Res, !IO).
 
 %-----------------------------------------------------------------------------%
 
