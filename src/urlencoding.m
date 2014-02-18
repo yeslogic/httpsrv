@@ -83,8 +83,11 @@ all_pairs(Src, AssocList, !PS) :-
 
 pair(Src, Name - Value, !PS) :-
     name(Src, Name, !PS),
-    next_char(Src, '=', !PS),
-    value(Src, Value, !PS).
+    ( next_char(Src, '=', !PS) ->
+        value(Src, Value, !PS)
+    ;
+        Value = ""
+    ).
 
 :- pred name(src::in, string::out, ps::in, ps::out) is semidet.
 
