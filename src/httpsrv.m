@@ -149,9 +149,9 @@
 
 :- type cookie_attribute
     --->    expires(time_t)
-    ;       max_age(int) % strictly positive
-    ;       domain(string)
-    ;       path(string)
+    ;       max_age(int)    % strictly positive
+    ;       domain(string)  % non-empty
+    ;       path(string)    % non-empty
     ;       secure
     ;       httponly.
 
