@@ -76,8 +76,7 @@
             ).
 
 :- type content
-    --->    none
-    ;       string(string)
+    --->    string(string)
 
             % For application/x-www-form-urlencoded
             % Keys are in RECEIVED order and duplicate keys are possible.

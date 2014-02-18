@@ -106,7 +106,6 @@ echo_handler(Request, response(Status, AdditionalHeaders, Content), !IO) :-
 
 :- func present(content) = list(string).
 
-present(none) = [].
 present(string(String)) = ["«", String, "»\n"].
 present(form_urlencoded(Pairs)) =
     condense(map(present_pairs, Pairs)).

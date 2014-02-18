@@ -915,8 +915,6 @@ client_set_request_body(client_t *client)
     if (client->request_acc.multipart_parser != 0) {
         client->request = request_set_body_formdata(client->request,
             client->request_acc.multipart_parser);
-    } else if (client->request_acc.body_buf.len == 0) {
-        /* none */
     } else {
         MR_String body;
         MR_bool valid;

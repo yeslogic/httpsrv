@@ -38,7 +38,8 @@
 :- pragma foreign_export("C", request_init(in) = out, "request_init").
 
 request_init(Client) =
-    request(Client, other(""), "", url_init, no, [], init_headers, [], none).
+    request(Client, other(""), "", url_init, no, [], init_headers, [],
+        string("")).
 
 %-----------------------------------------------------------------------------%
 
