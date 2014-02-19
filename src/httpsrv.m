@@ -88,8 +88,13 @@
 
 :- func get_method(request) = method.
 
-:- func get_url_raw(request) = string.
+    % Return the raw Request-URI on the Request-Line.
+    %
+:- func get_request_uri(request) = string.
 
+    % Return the resource identified by the request, i.e. taking into account
+    % the Request-URI and the Host header field.
+    %
 :- func get_url(request) = url.
 
 :- func get_path_decoded(request) = maybe(string).
@@ -223,7 +228,7 @@
     --->    request(
                 client      :: client,
                 method      :: method,
-                url_raw     :: string, % mainly for debugging
+                request_uri :: string, % from the Request-Line
                 url         :: url,
                 path_decoded:: maybe(string), % percent decoded
                 query_params:: assoc_list(string), % percent decoded
@@ -337,7 +342,7 @@ call_periodic_handler_pred(Pred, !IO) :-
 
 get_method(Request) = Request ^ method.
 
-get_url_raw(Request) = Request ^ url_raw.
+get_request_uri(Request) = Request ^ request_uri.
 
 get_url(Request) = Request ^ url.
 

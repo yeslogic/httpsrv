@@ -358,7 +358,7 @@ make_client(daemon_t *daemon)
 
     /* See also client_on_message_begin */
     buffer_init(&client->read_buf);
-    buffer_init(&client->request_acc.url_buf);
+    buffer_init(&client->request_acc.request_uri_buf);
     buffer_init(&client->request_acc.header_field_buf);
     buffer_init(&client->request_acc.header_value_buf);
     client->request_acc.last_header_cb = NONE;
@@ -565,7 +565,7 @@ client_on_message_begin(http_parser *parser)
     client->request = request_init(client);
 
     /* Do not clear read_buf; would break pipelining. */
-    buffer_clear(&client->request_acc.url_buf);
+    buffer_clear(&client->request_acc.request_uri_buf);
     buffer_clear(&client->request_acc.header_field_buf);
     buffer_clear(&client->request_acc.header_value_buf);
     client->request_acc.last_header_cb = NONE;
@@ -589,7 +589,7 @@ client_on_url(http_parser *parser, const char *at, size_t length)
     DISABLE LOG("[%d:%d] on_url\n",
         client->id, client->request_count);
 
-    buffer_append(&client->request_acc.url_buf, at, length);
+    buffer_append(&client->request_acc.request_uri_buf, at, length);
 
     return 0;
 }
@@ -675,7 +675,8 @@ client_on_headers_complete(http_parser *parser)
 {
     client_t *client = client_from_parser_data(parser);
     MR_String method;
-    MR_String url;
+    MR_String request_uri;
+    MR_bool enforce_host_header;
     MR_bool valid;
 
     /* Pick up the last header, if any */
@@ -686,37 +687,33 @@ client_on_headers_complete(http_parser *parser)
     /* Pick up the method. */
     MR_make_aligned_string(method, http_method_str(client->parser.method));
 
-    /* Pick up the URL. URLs are limited to US-ASCII. */
-    url = buffer_to_string_utf8(&client->request_acc.url_buf, &valid);
-    buffer_clear(&client->request_acc.url_buf);
+    /* Pick up the Request-URI. Should be limited to US-ASCII. */
+    request_uri = buffer_to_string_utf8(&client->request_acc.request_uri_buf,
+        &valid);
+    buffer_clear(&client->request_acc.request_uri_buf);
     if (!valid) {
-        return -1;
-    }
-
-    if (request_prepare(method, url, client->request, &client->request)
-        == MR_FALSE)
-    {
-        LOG("[%d:%d] request_prepare failed\n",
-            client->id, client->request_count);
-        /*
-        ** XXX Servers must report a 400 (Bad Request) error if an HTTP/1.1
-        ** request does not include a Host request-header
-        */
         return -1;
     }
 
     client->should_keep_alive = http_should_keep_alive(parser);
     client->deferred_on_message_complete = false;
 
-    LOG("[%d:%d] on_headers_complete: method='%s', url='%s', should_keep_alive=%d\n",
+    enforce_host_header = http11_or_greater(&client->parser);
+    if (request_prepare(method, request_uri, enforce_host_header,
+            client->request, &client->request) == MR_FALSE)
+    {
+        LOG("[%d:%d] request_prepare failed\n",
+            client->id, client->request_count);
+        client_write_400_bad_request(client);
+        return 0;
+    }
+
+    LOG("[%d:%d] on_headers_complete: method='%s', "
+        "request-uri='%s', should_keep_alive=%d\n",
         client->id, client->request_count,
-        method, url, client->should_keep_alive);
+        method, request_uri, client->should_keep_alive);
 
     if (http11_or_greater(&client->parser)) {
-        /*
-        ** The spec requires a Host header to be present.
-        */
-
         int expect = request_get_expect_header(client->request);
         if (expect == 0) {
             /* No Expect: header. */
@@ -885,23 +882,38 @@ client_after_write_100_continue(uv_write_t *req, int status)
 }
 
 static void
+client_write_400_bad_request(client_t *client)
+{
+    static char text[] = "HTTP/1.1 400 Bad Request\r\n\r\n";
+
+    client_write_error_response(client, text, sizeof(text));
+}
+
+static void
 client_write_417_expectation_failed(client_t *client)
 {
     static char text[] = "HTTP/1.1 417 Expectation Failed\r\n\r\n";
+
+    client_write_error_response(client, text, sizeof(text));
+}
+
+static void
+client_write_error_response(client_t *client, const char *response,
+    size_t responselen)
+{
     const int nbufs = 1;
     uv_buf_t bufs[nbufs];
 
-    LOG("[%d:%d] write 417 Expectation Failed\n",
+    LOG("[%d:%d] write simple response\n",
         client->id, client->request_count);
 
     client_disable_read_and_stop_timer(client);
 
     client->state = WRITING_RESPONSE;
-    client->should_keep_alive = false;
 
     /* XXX set write timeout */
 
-    bufs[0] = uv_buf_init(text, sizeof(text));
+    bufs[0] = uv_buf_init((char *) response, responselen);
     uv_write(&client->write_req, client_tcp_stream(client),
         bufs, nbufs, client_after_write_response_bufs);
 }

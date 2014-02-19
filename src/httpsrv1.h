@@ -68,7 +68,7 @@ struct client {
 
     buffer_t read_buf;
     struct {
-        buffer_t url_buf;
+        buffer_t request_uri_buf;
         buffer_t header_field_buf;
         buffer_t header_value_buf;
         enum last_header_cb last_header_cb;
@@ -156,10 +156,14 @@ static void
 client_after_write_100_continue(uv_write_t *req, int status);
 
 static void
+client_write_400_bad_request(client_t *client);
+
+static void
 client_write_417_expectation_failed(client_t *client);
 
 static void
-client_after_write_417_expectation_failed(uv_write_t *req, int status);
+client_write_error_response(client_t *client, const char *response,
+    size_t responselen);
 
 static bool
 client_set_request_body(client_t *client);

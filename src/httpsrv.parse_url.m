@@ -5,22 +5,14 @@
 
 :- interface.
 
-:- pred parse_url_and_host_header(headers::in, string::in, url::out)
-    is semidet.
-
 :- pred parse_url(string::in, url::out) is semidet.
+
+:- pred is_absolute_url(url::in) is semidet.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
-
-:- import_module int.
-:- import_module string.
-
-:- import_module rfc2616.
-
-%-----------------------------------------------------------------------------%
 
 :- pragma foreign_decl("C", local, "
     #include ""http_parser.h""
@@ -47,53 +39,6 @@
         'UF_QUERY' - "UF_QUERY",
         'UF_FRAGMENT' - "UF_FRAGMENT"
     ]).
-
-%-----------------------------------------------------------------------------%
-
-% 5.2. The Resource Identified by a Request
-
-parse_url_and_host_header(Headers, UrlString, Url) :-
-    ( UrlString = "*" ->
-        Url = url_init
-    ;
-        parse_url.parse_url(UrlString, Url0),
-        search_field(Headers, host, HostFieldValue),
-        ( is_absolute_url(Url0) ->
-            % Ignore the Host header field.
-            % Strictly speaking we are supposed to enforce its existence.
-            Url = Url0
-        ;
-            parse_host_header_value(HostFieldValue, Host, MaybePort),
-            Url1 = Url0 ^ host := yes(Host),
-            Url = Url1 ^ port := canonicalise_maybe_port(MaybePort)
-        )
-    ).
-
-:- func host = case_insensitive.
-
-host = case_insensitive("host").
-
-:- pred is_absolute_url(url::in) is semidet.
-
-is_absolute_url(Url) :-
-    Url ^ scheme = yes(_).
-
-:- func canonicalise_maybe_port(maybe(string)) = maybe(string).
-
-canonicalise_maybe_port(no) = no.
-canonicalise_maybe_port(yes(Port0)) = yes(Port) :-
-    ( port_to_int(Port0, Int) ->
-        Port = string.from_int(Int)
-    ;
-        % Should not be reachable.
-        Port = Port0
-    ).
-
-:- pred port_to_int(string::in, int::out) is semidet.
-
-port_to_int(String, Int) :-
-    string.to_int(String, Int),
-    Int > 0.
 
 %-----------------------------------------------------------------------------%
 
@@ -152,6 +97,11 @@ maybe_field(Input, ParseResult, Field, MaybeString) :-
         SUCCESS_INDICATOR = MR_FALSE;
     }
 ").
+
+%-----------------------------------------------------------------------------%
+
+is_absolute_url(Url) :-
+    Url ^ scheme = yes(_).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

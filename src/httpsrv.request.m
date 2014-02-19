@@ -20,6 +20,7 @@
 :- import_module urlencoding.
 :- use_module rfc2045.
 :- use_module rfc2046.
+:- use_module rfc2616.
 :- use_module rfc2822.
 :- use_module rfc6265.
 
@@ -82,15 +83,21 @@ expect = case_insensitive("expect").
 
 %-----------------------------------------------------------------------------%
 
-:- pred request_prepare(string::in, string::in, request::in, request::out)
-    is semidet.
+:- pred request_prepare(string::in, string::in, bool::in,
+    request::in, request::out) is semidet.
 
-:- pragma foreign_export("C", request_prepare(in, in, in, out),
+:- pragma foreign_export("C", request_prepare(in, in, in, in, out),
     "request_prepare").
 
-request_prepare(MethodString, UrlString, !Req) :-
+request_prepare(MethodString, RequestUri, EnforceHostHeader, !Req) :-
     request_set_method(MethodString, !Req),
-    request_set_url(UrlString, !Req),
+    ( search_field(!.Req ^ headers, host, HostFieldValuePrime) ->
+        HostFieldValue = HostFieldValuePrime
+    ;
+        EnforceHostHeader = no,
+        HostFieldValue = ""
+    ),
+    request_set_request_uri(RequestUri, HostFieldValue, !Req),
     request_set_cookies(!Req).
 
 :- pred request_set_method(string::in, request::in, request::out) is det.
@@ -102,16 +109,17 @@ request_set_method(MethodString, !Req) :-
         !Req ^ method := other(MethodString)
     ).
 
-:- pred request_set_url(string::in, request::in, request::out) is semidet.
+:- pred request_set_request_uri(string::in, string::in,
+    request::in, request::out) is semidet.
 
-request_set_url(UrlString, !Req) :-
-    !Req ^ url_raw := UrlString,
-    ( UrlString = "*" ->
+request_set_request_uri(RequestUri, HostFieldValue, !Req) :-
+    !Req ^ request_uri := RequestUri,
+    ( RequestUri = "*" ->
         % Request applies to the server and not a resource.
         % Maybe we could add an option for this.
         true
     ;
-        parse_url_and_host_header(!.Req ^ headers, UrlString, Url),
+        make_url(RequestUri, HostFieldValue, Url),
         require_det (
             decode_path(Url, MaybePathDecoded),
             decode_query_parameters(Url, QueryParams),
@@ -120,6 +128,34 @@ request_set_url(UrlString, !Req) :-
             !Req ^ query_params := QueryParams
         )
     ).
+
+    % 5.2. The Resource Identified by a Request
+    %
+:- pred make_url(string::in, string::in, url::out) is semidet.
+
+make_url(RequestUri, HostFieldValue, Url) :-
+    ( RequestUri = "*" ->
+        Url = url_init
+    ;
+        parse_url.parse_url(RequestUri, Url0),
+        ( is_absolute_url(Url0) ->
+            % Ignore the Host header field.
+            Url = Url0
+        ; HostFieldValue = "" ->
+            % "If the requested URI does not include an Internet host name for
+            % the service being requested, then the Host header field MUST be
+            % given with an empty value."
+            Url = Url0
+        ;
+            rfc2616.parse_host_header_value(HostFieldValue, Host, MaybePort),
+            Url1 = Url0 ^ host := yes(Host),
+            Url = Url1 ^ port := MaybePort
+        )
+    ).
+
+:- func host = case_insensitive.
+
+host = case_insensitive("host").
 
 :- pred decode_path(url::in, maybe(string)::out) is det.
 
