@@ -50,6 +50,7 @@
 :- import_module bool.
 :- import_module char.
 :- import_module int.
+:- import_module list.
 :- import_module pair.
 :- import_module require.
 :- import_module string.
@@ -233,8 +234,11 @@ have_header_block(Buf, StartPos, EndPos, !PS, !IO) :-
     (
         MaybeString = yes(String),
         ( rfc2822.parse_fields(String, Fields) ->
-            Headers = init_headers_from_assoc_list(Fields),
-            have_headers(Headers, !PS)
+            ( from_assoc_list(reject_duplicate_header, Fields, Headers) ->
+                have_headers(Headers, !PS)
+            ;
+                !PS ^ state := error("duplicate header field")
+            )
         ;
             !PS ^ state := error("error parsing headers")
         )
@@ -269,7 +273,7 @@ have_headers(Headers, !PS) :-
 
 get_content_type_or_default(Headers, MediaType, Params) :-
     (
-        search_field(Headers, content_type, Body),
+        search_field(Headers, content_type, [Body]),
         rfc2822.parse_structured_field_body(Body, rfc2045.content_type_body,
             Output)
     ->
@@ -445,7 +449,7 @@ find_crlf_crlf(Buf, FoundPos, !BufPos, !IO) :-
     is semidet.
 
 search_content_transfer_encoding(Headers, Mechanism) :-
-    search_field(Headers, content_transfer_encoding, Body),
+    search_field(Headers, content_transfer_encoding, [Body]),
     rfc2822.parse_structured_field_body(Body,
         rfc2045.content_transfer_encoding_body, Mechanism).
 
@@ -459,7 +463,7 @@ content_transfer_encoding = case_insensitive("content-transfer-encoding").
     parameters::out) is semidet.
 
 search_content_disposition(Headers, DispositionType, Params) :-
-    search_field(Headers, content_disposition_header, Body),
+    search_field(Headers, content_disposition_header, [Body]),
     rfc2822.parse_structured_field_body(Body, rfc2183.content_disposition_body,
         DispositionType - ParamsMap),
     Params = init_parameters_from_map(ParamsMap).

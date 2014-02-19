@@ -50,9 +50,17 @@ request_init(Client) =
     "request_add_header").
 
 request_add_header(Req0, Name, Body) = Req :-
+    % HTTP allows some (though not all) duplicate header fields.
     Req0 ^ headers = Headers0,
-    add_header(from_string(Name), Body, Headers0, Headers),
-    Req = Req0 ^ headers := Headers.
+    (
+        add_header(append_duplicate_header, from_string(Name), Body,
+            Headers0, Headers)
+    ->
+        Req = Req0 ^ headers := Headers
+    ;
+        % Shouldn't happen.
+        Req = Req0
+    ).
 
 %-----------------------------------------------------------------------------%
 
@@ -63,7 +71,7 @@ request_add_header(Req0, Name, Body) = Req :-
 
 request_get_expect_header(Req) = Result :-
     Headers = Req ^ headers,
-    ( search_field(Headers, expect, Body) ->
+    ( search_field(Headers, expect, [Body]) ->
         % Strictly speaking the expectation value can be a comma separated list
         % and "100-continue" is one of the possible elements of that list.
         % But at least HTTP field values may NOT have comments unless
@@ -91,7 +99,7 @@ expect = case_insensitive("expect").
 
 request_prepare(MethodString, RequestUri, EnforceHostHeader, !Req) :-
     request_set_method(MethodString, !Req),
-    ( search_field(!.Req ^ headers, host, HostFieldValuePrime) ->
+    ( search_field(!.Req ^ headers, host, [HostFieldValuePrime]) ->
         HostFieldValue = HostFieldValuePrime
     ;
         EnforceHostHeader = no,
@@ -187,11 +195,14 @@ decode_query_parameters(Url, Params) :-
 
 request_set_cookies(!Req) :-
     % Parse all Cookie: header values, dropping anything we can't recognise.
-    search_field_multi(!.Req ^ headers, cookie, CookieHeaderValues),
-    list.filter_map(rfc6265.parse_cookie_header_value, CookieHeaderValues,
-        Cookiess),
-    list.condense(Cookiess, Cookies),
-    !Req ^ cookies := Cookies.
+    ( search_field(!.Req ^ headers, cookie, CookieHeaderValues) ->
+        list.filter_map(rfc6265.parse_cookie_header_value, CookieHeaderValues,
+            Cookiess),
+        list.condense(Cookiess, Cookies),
+        !Req ^ cookies := Cookies
+    ;
+        true
+    ).
 
 :- func cookie = case_insensitive.
 
@@ -207,7 +218,7 @@ cookie = case_insensitive("cookie").
 request_set_body_stringish(Req0, String) = Req :-
     Headers = Req0 ^ headers,
     (
-        search_field(Headers, content_type, ContentTypeBody),
+        search_field(Headers, content_type, [ContentTypeBody]),
         % Hack: this is a HTTP header not a MIME header.
         % One known difference is that [RFC 2616] 3.7 Media Types:
         % "Linear white space (LWS) MUST NOT be used [...] between
@@ -243,7 +254,7 @@ application_x_www_form_urlencoded =
 
 request_search_multipart_formdata_boundary(Req, Boundary) :-
     Headers = Req ^ headers,
-    search_field(Headers, content_type, ContentTypeBody),
+    search_field(Headers, content_type, [ContentTypeBody]),
 
     % Hack: this is a HTTP header not a MIME header.
     % See also another instance above.
