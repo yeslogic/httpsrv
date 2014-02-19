@@ -171,6 +171,12 @@
     io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
+
+% Utilities
+
+:- pred parse_url(string::in, url::out) is semidet.
+
+%-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
 :- implementation.
@@ -188,6 +194,7 @@
 :- include_module httpsrv.response_header.
 :- include_module httpsrv.static_file.
 
+:- use_module httpsrv.parse_url.
 :- use_module httpsrv.response.
 :- use_module httpsrv.static_file.
 
@@ -381,6 +388,11 @@ set_response(Request, Response, !IO) :-
 
 open_static_file(Path, Result, !IO) :-
     static_file.open_static_file(Path, Result, !IO).
+
+%-----------------------------------------------------------------------------%
+
+parse_url(String, Url) :-
+    parse_url.parse_url(String, Url).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

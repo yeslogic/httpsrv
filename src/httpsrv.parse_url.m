@@ -8,6 +8,8 @@
 :- pred parse_url_and_host_header(headers::in, string::in, url::out)
     is semidet.
 
+:- pred parse_url(string::in, url::out) is semidet.
+
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -54,7 +56,7 @@ parse_url_and_host_header(Headers, UrlString, Url) :-
     ( UrlString = "*" ->
         Url = url_init
     ;
-        parse_url(UrlString, Url0),
+        parse_url.parse_url(UrlString, Url0),
         search_field(Headers, host, HostFieldValue),
         ( is_absolute_url(Url0) ->
             % Ignore the Host header field.
@@ -94,8 +96,6 @@ port_to_int(String, Int) :-
     Int > 0.
 
 %-----------------------------------------------------------------------------%
-
-:- pred parse_url(string::in, url::out) is semidet.
 
 parse_url(Input, Url) :-
     parse_url_2(Input, ParseResult),
