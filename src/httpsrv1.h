@@ -44,10 +44,19 @@ enum last_header_cb {
 };
 
 enum client_state {
-    IDLE,
-    PREPARING_RESPONSE,
-    WRITING_100_CONTINUE,
-    WRITING_RESPONSE
+    IDLE = 1,                   /* not yet reading a request */
+    READING_REQUEST_HEADER,     /* in request header */
+    WRITING_CONTINUE_STATUS_LINE, /* writing 100 Continue status (if needed) */
+    READING_REQUEST_BODY,       /* in request body */
+    PREPARING_RESPONSE,         /* waiting for user program to set response */
+    WRITING_RESPONSE,           /* writing out user program response */
+    CLOSING                     /* closing */
+};
+
+enum error_status {
+    NO_ERROR_YET,
+    BAD_REQUEST_400 = 400,
+    EXPECTATION_FAILED_417 = 417
 };
 
 struct client {
@@ -62,8 +71,7 @@ struct client {
     http_parser parser;
 
     enum client_state state;
-    bool should_keep_alive;
-    bool deferred_on_message_complete;
+    enum error_status error_detected;
     MR_Word request;
 
     buffer_t read_buf;
@@ -111,10 +119,10 @@ static void
 server_on_connect(uv_stream_t *server_handle, int status);
 
 static void
-client_enable_read(client_t *client, uv_timer_cb timeout_cb, int64_t timeout);
+client_resume_read(client_t *client, uv_timer_cb timeout_cb, int64_t timeout);
 
 static void
-client_disable_read_and_stop_timer(client_t *client);
+client_pause_read(client_t *client);
 
 static uv_buf_t
 client_on_alloc(uv_handle_t *client, size_t suggested_size);
@@ -150,10 +158,10 @@ static int
 client_on_message_complete(http_parser *parser);
 
 static void
-client_write_100_continue(client_t *client);
+client_maybe_write_continue_status_line(client_t *client, bool really);
 
 static void
-client_after_write_100_continue(uv_write_t *req, int status);
+client_after_write_continue_status_line(uv_write_t *req, int status);
 
 static void
 client_write_400_bad_request(client_t *client);
@@ -196,7 +204,7 @@ static void
 client_on_keepalive_timeout(uv_timer_t *timer, int status);
 
 static void
-client_close(client_t *client);
+client_close(client_t *client, int line);
 
 static void
 client_on_close_1(uv_handle_t *handle);
@@ -217,6 +225,9 @@ _httpsrv_set_response_bufs(client_t *client,
 
 void
 _httpsrv_send_async(client_t *client);
+
+bool
+_httpsrv_client_should_keep_alive(client_t *client);
 
 #endif
 

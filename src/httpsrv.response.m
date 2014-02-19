@@ -29,7 +29,7 @@ set_response(Request, response(Status, AdditionalHeaders, Content), !IO) :-
     Client = Request ^ client,
     time(Time, !IO),
     HttpDate = timestamp_to_http_date(Time),
-    KeepAlive = client_should_keep_alive(Client),
+    client_should_keep_alive(Client, KeepAlive, !IO),
     (
         KeepAlive = yes,
         MaybeConnectionClose = ""
@@ -99,13 +99,14 @@ skip_body(Request) :-
 
 sum_length(Xs) = foldl(plus, map(length, Xs), 0).
 
-:- func client_should_keep_alive(client) = bool.
+:- pred client_should_keep_alive(client::in, bool::out, io::di, io::uo) is det.
 
 :- pragma foreign_proc("C",
-    client_should_keep_alive(Client::in) = (KeepAlive::out),
-    [will_not_call_mercury, promise_pure, thread_safe, may_not_duplicate],
+    client_should_keep_alive(Client::in, KeepAlive::out, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
 "
-    KeepAlive = (Client->should_keep_alive) ? MR_YES : MR_NO;
+    KeepAlive = _httpsrv_client_should_keep_alive(Client) ? MR_YES : MR_NO;
 ").
 
 %-----------------------------------------------------------------------------%
