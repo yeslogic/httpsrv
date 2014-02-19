@@ -871,7 +871,7 @@ client_maybe_write_continue_status_line(client_t *client, bool really)
     if (really) {
         LOG("[%d:%d] writing 100 Continue\n",
             client->id, client->request_count);
-        bufs[0] = uv_buf_init(text, sizeof(text));
+        bufs[0] = uv_buf_init(text, sizeof(text) - 1);
     } else {
         bufs[0] = uv_buf_init(text, 0); /* dummy */
     }
@@ -1013,17 +1013,23 @@ client_on_message_complete(http_parser *parser)
 static void
 client_write_400_bad_request(client_t *client)
 {
-    static char text[] = "HTTP/1.1 400 Bad Request\r\n\r\n";
+    static char text[] =
+        "HTTP/1.1 400 Bad Request\r\n"
+        "Content-Length: 0\r\n"
+        "\r\n";
 
-    client_write_error_response(client, text, sizeof(text));
+    client_write_error_response(client, text, sizeof(text) - 1);
 }
 
 static void
 client_write_417_expectation_failed(client_t *client)
 {
-    static char text[] = "HTTP/1.1 417 Expectation Failed\r\n\r\n";
+    static char text[] =
+        "HTTP/1.1 417 Expectation Failed\r\n"
+        "Content-Length: 0\r\n"
+        "\r\n";
 
-    client_write_error_response(client, text, sizeof(text));
+    client_write_error_response(client, text, sizeof(text) - 1);
 }
 
 static void
