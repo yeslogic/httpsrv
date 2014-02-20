@@ -659,6 +659,11 @@ client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf)
                 client->id, client->request_count);
             return;
         }
+        if (errnum == HPE_HEADER_OVERFLOW) {
+            client_pause_read(client);
+            client_write_fatal_431_request_header_fields_too_large(client);
+            return;
+        }
         if (errnum != HPE_OK) {
             LOG("[%d:%d] parse error: %s %s\n",
                 client->id, client->request_count,
@@ -860,7 +865,7 @@ client_on_headers_complete(http_parser *parser)
         LOG("[%d:%d] content_length=%ld too big\n",
             client->id, client->request_count,
             client->parser.content_length);
-        client_write_413_request_entity_too_large(client);
+        client_write_fatal_413_request_entity_too_large(client);
         return 0;
     }
 
@@ -982,7 +987,7 @@ client_on_body(http_parser *parser, const char *at, size_t length)
     */
     if (client->request_acc.body_total + length > daemon->max_body) {
         client_pause_read(client);
-        client_write_413_request_entity_too_large(client);
+        client_write_fatal_413_request_entity_too_large(client);
         return 0;
     }
 
@@ -1077,7 +1082,19 @@ client_write_400_bad_request(client_t *client)
 }
 
 static void
-client_write_413_request_entity_too_large(client_t *client)
+client_write_417_expectation_failed(client_t *client)
+{
+    static char text[] =
+        "HTTP/1.1 417 Expectation Failed\r\n"
+        "Content-Length: 0\r\n"
+        "\r\n";
+
+    client_write_error_response(client, WRITING_RESPONSE,
+        text, sizeof(text) - 1);
+}
+
+static void
+client_write_fatal_413_request_entity_too_large(client_t *client)
 {
     static char text[] =
         "HTTP/1.1 413 Request Entity Too Large\r\n"
@@ -1093,14 +1110,18 @@ client_write_413_request_entity_too_large(client_t *client)
 }
 
 static void
-client_write_417_expectation_failed(client_t *client)
+client_write_fatal_431_request_header_fields_too_large(client_t *client)
 {
     static char text[] =
-        "HTTP/1.1 417 Expectation Failed\r\n"
+        "HTTP/1.1 431 Request Header Fields Too Large\r\n"
         "Content-Length: 0\r\n"
         "\r\n";
 
-    client_write_error_response(client, WRITING_RESPONSE,
+    /*
+    ** This error is fatal as we don't want to read any of the header or body
+    ** after sending the error response.
+    */
+    client_write_error_response(client, WRITING_FATAL_RESPONSE,
         text, sizeof(text) - 1);
 }
 

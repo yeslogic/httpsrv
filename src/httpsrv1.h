@@ -173,10 +173,13 @@ static void
 client_write_400_bad_request(client_t *client);
 
 static void
-client_write_413_request_entity_too_large(client_t *client);
+client_write_417_expectation_failed(client_t *client);
 
 static void
-client_write_417_expectation_failed(client_t *client);
+client_write_fatal_413_request_entity_too_large(client_t *client);
+
+static void
+client_write_fatal_431_request_header_fields_too_large(client_t *client);
 
 static void
 client_write_error_response(client_t *client, enum client_state new_state,
