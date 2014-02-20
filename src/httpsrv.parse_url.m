@@ -14,6 +14,9 @@
 
 :- implementation.
 
+:- import_module int.
+:- import_module string.
+
 :- pragma foreign_decl("C", local, "
     #include ""http_parser.h""
 ").
@@ -43,7 +46,13 @@
 %-----------------------------------------------------------------------------%
 
 parse_url(Input, Url) :-
-    parse_url_2(Input, ParseResult),
+    % XXX struct http_parser_url uses uint16_t for offset and length
+    % so will produce incorrect results on very long strings.
+    ( string.count_code_units(Input) =< 0xffff ->
+        parse_url_2(Input, ParseResult)
+    ;
+        fail
+    ),
     require_det (
         MaybeField = maybe_field(Input, ParseResult),
         MaybeField('UF_SCHEMA', MaybeScheme),
