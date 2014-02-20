@@ -253,8 +253,9 @@ daemon_setup(MR_Word request_handler,
     daemon->parser_settings.on_body = client_on_body;
     daemon->parser_settings.on_message_complete = client_on_message_complete;
     daemon->request_handler = request_handler;
-    daemon->next_client_id = 1;
     daemon->periodics = NULL;
+    daemon->clients = NULL;
+    daemon->next_client_id = 1;
 
     r = uv_listen(stream_from_tcp(&daemon->server), back_log,
         server_on_connect);
@@ -283,6 +284,8 @@ daemon_cleanup(daemon_t *daemon)
     daemon_cleanup_periodics(daemon);
 
     uv_run(daemon->loop, UV_RUN_DEFAULT);
+
+    assert(daemon->clients == NULL);
 
     /* uv_print_all_handles(daemon->loop); */
 
@@ -347,6 +350,9 @@ make_client(daemon_t *daemon)
     client->id = daemon->next_client_id++;
     client->request_count = 0;
     client->daemon = daemon;
+    /* link */
+    client->next = daemon->clients;
+    daemon->clients = client;
 
     client->state = IDLE;
     client->error_detected = NO_ERROR_YET;
@@ -451,6 +457,7 @@ daemon_on_signal(uv_signal_t *signal, int status)
 {
     daemon_t *daemon = daemon_from_signal_data(signal);
     struct periodic *periodic;
+    client_t *client;
 
     LOG("[srv] received signal %d\n", signal->signum);
 
@@ -468,6 +475,13 @@ daemon_on_signal(uv_signal_t *signal, int status)
     /* Stop periodic timers immediately. */
     for (periodic = daemon->periodics; periodic; periodic = periodic->next) {
         uv_timer_stop(&periodic->timer);
+    }
+
+    /* Close idle clients immediately. */
+    for (client = daemon->clients; client; client = client->next) {
+        if (client->state == IDLE) {
+            client_close(client, __LINE__);
+        }
     }
 }
 
@@ -1334,9 +1348,37 @@ client_on_close_3(uv_handle_t *handle)
 
     assert(!uv_is_active(handle_from_async(&client->async)));
 
+    client_unlink(client);
+
     MR_GC_free(client); /* allocated uncollectable */
 
     /* uv_print_all_handles(loop); */
+}
+
+static void
+client_unlink(client_t *client)
+{
+    daemon_t *daemon = client->daemon;
+    client_t *prev;
+    client_t *cur;
+
+    prev = NULL;
+    cur = daemon->clients;
+    while (cur != NULL) {
+        if (cur == client) {
+            if (prev == NULL) {
+                daemon->clients = cur->next;
+            } else {
+                prev->next = cur->next;
+            }
+            cur->next = NULL;
+            return;
+        }
+        prev = cur;
+        cur = cur->next;
+    }
+
+    assert(0 && "client not in linked list");
 }
 
 /*

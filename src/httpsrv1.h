@@ -26,8 +26,9 @@ struct daemon {
     uv_tcp_t server;
     http_parser_settings parser_settings;
     MR_Word request_handler;
-    unsigned next_client_id;    /* for debugging */
     struct periodic *periodics;
+    client_t *clients;
+    unsigned next_client_id;    /* for debugging */
 };
 
 struct periodic {
@@ -64,6 +65,7 @@ struct client {
     unsigned id;                /* for debugging */
     unsigned request_count;     /* for debugging */
     daemon_t *daemon;
+    client_t *next;
 
     uv_tcp_t tcp;
     uv_async_t async;
@@ -214,6 +216,9 @@ client_on_close_2(uv_handle_t *handle);
 
 static void
 client_on_close_3(uv_handle_t *handle);
+
+static void
+client_unlink(client_t *client);
 
 static MR_String
 client_address_ipv4(client_t *client, MR_AllocSiteInfoPtr alloc_id);
