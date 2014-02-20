@@ -33,7 +33,8 @@ main(!IO) :-
     Settings = [
         bind_address("0.0.0.0" @ BindAddress),
         port(8000 @ Port),
-        back_log(8)
+        back_log(8),
+        max_body(1000000)
     ],
     setup(request_handler, Settings, Res, !IO),
     (

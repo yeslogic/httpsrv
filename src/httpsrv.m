@@ -28,7 +28,8 @@
 :- type server_setting
     --->    bind_address(string)
     ;       port(int)
-    ;       back_log(int).
+    ;       back_log(int)
+    ;       max_body(int). % bytes (approx)
 
 :- type request_handler == pred(request, io, io).
 :- inst request_handler == (pred(in, di, uo) is cc_multi).
@@ -187,6 +188,7 @@
 :- implementation.
 
 :- import_module bool.
+:- import_module int.
 :- import_module time.
 
 :- import_module buffer.
@@ -270,8 +272,10 @@ setup(RequestHandler, Settings, Res, !IO) :-
     BindAddress = FindStr(pred(bind_address(X)::in, X::out) is semidet, "127.0.0.1"),
     Port = FindInt(pred(port(X)::in, X::out) is semidet, 80),
     BackLog = FindInt(pred(back_log(X)::in, X::out) is semidet, 1),
+    MaxBody = FindInt(pred(max_body(X)::in, X::out) is semidet, 1024 * 1024),
 
-    setup_2(RequestHandler, BindAddress, Port, BackLog, Daemon, Ok, !IO),
+    setup_2(RequestHandler, BindAddress, Port, BackLog, MaxBody, Daemon,
+        Ok, !IO),
     (
         Ok = yes,
         Res = ok(Daemon)
@@ -282,17 +286,18 @@ setup(RequestHandler, Settings, Res, !IO) :-
     ).
 
 :- pred setup_2(request_handler::in(request_handler),
-    string::in, int::in, int::in, daemon::out, bool::out, io::di, io::uo)
-    is det.
+    string::in, int::in, int::in, int::in, daemon::out, bool::out,
+    io::di, io::uo) is det.
 
 :- pragma foreign_proc("C",
     setup_2(RequestHandler::in(request_handler),
-        BindAddress::in, Port::in, BackLog::in,
+        BindAddress::in, Port::in, BackLog::in, MaxMessageBody::in,
         Daemon::out, Ok::out, _IO0::di, _IO::uo),
     [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
         may_not_duplicate],
 "
-    Daemon = daemon_setup(RequestHandler, BindAddress, Port, BackLog);
+    Daemon = daemon_setup(RequestHandler, BindAddress, Port, BackLog,
+        MaxMessageBody);
     Ok = (Daemon) ? MR_YES : MR_NO;
 ").
 

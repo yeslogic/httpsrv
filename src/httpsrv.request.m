@@ -98,8 +98,9 @@ expect = case_insensitive("expect").
     "request_prepare").
 
 request_prepare(MethodString, RequestUri, EnforceHostHeader, !Req) :-
+    Headers = !.Req ^ headers,
     request_set_method(MethodString, !Req),
-    ( search_field(!.Req ^ headers, host, [HostFieldValuePrime]) ->
+    ( search_field(Headers, host, [HostFieldValuePrime]) ->
         HostFieldValue = HostFieldValuePrime
     ;
         EnforceHostHeader = no,
@@ -107,6 +108,10 @@ request_prepare(MethodString, RequestUri, EnforceHostHeader, !Req) :-
     ),
     request_set_request_uri(RequestUri, HostFieldValue, !Req),
     request_set_cookies(!Req).
+
+:- func host = case_insensitive.
+
+host = case_insensitive("host").
 
 :- pred request_set_method(string::in, request::in, request::out) is det.
 
@@ -160,10 +165,6 @@ make_url(RequestUri, HostFieldValue, Url) :-
             Url = Url1 ^ port := MaybePort
         )
     ).
-
-:- func host = case_insensitive.
-
-host = case_insensitive("host").
 
 :- pred decode_path(url::in, maybe(string)::out) is det.
 

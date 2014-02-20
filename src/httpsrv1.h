@@ -25,6 +25,7 @@ struct daemon {
     uv_signal_t signal2;
     uv_tcp_t server;
     http_parser_settings parser_settings;
+    MR_Integer max_body;
     MR_Word request_handler;
     struct periodic *periodics;
     client_t *clients;
@@ -51,10 +52,11 @@ enum client_state {
     READING_REQUEST_BODY,       /* in request body */
     PREPARING_RESPONSE,         /* waiting for user program response */
     WRITING_RESPONSE,           /* writing out user program response */
+    WRITING_FATAL_RESPONSE,
     CLOSING                     /* closing */
 };
 
-enum error_status {
+enum deferred_error {
     NO_ERROR_YET,
     BAD_REQUEST_400 = 400,
     EXPECTATION_FAILED_417 = 417
@@ -73,7 +75,7 @@ struct client {
     http_parser parser;
 
     enum client_state state;
-    enum error_status error_detected;
+    enum deferred_error deferred_error;
     MR_Word request;
 
     buffer_t read_buf;
@@ -83,6 +85,7 @@ struct client {
         buffer_t header_value_buf;
         enum last_header_cb last_header_cb;
         buffer_t body_buf;
+        uint64_t body_total;
         MR_Word multipart_parser; /* 0 or pointer */
     } request_acc;
 
@@ -99,7 +102,8 @@ static daemon_t *
 daemon_setup(MR_Word request_handler,
     MR_String bind_address,
     MR_Integer port,
-    MR_Integer back_log);
+    MR_Integer back_log,
+    MR_Integer max_body);
 
 static void
 daemon_cleanup(daemon_t *daemon);
@@ -169,11 +173,14 @@ static void
 client_write_400_bad_request(client_t *client);
 
 static void
+client_write_413_request_entity_too_large(client_t *client);
+
+static void
 client_write_417_expectation_failed(client_t *client);
 
 static void
-client_write_error_response(client_t *client, const char *response,
-    size_t responselen);
+client_write_error_response(client_t *client, enum client_state new_state,
+    const char *response, size_t responselen);
 
 static bool
 client_set_request_body(client_t *client);

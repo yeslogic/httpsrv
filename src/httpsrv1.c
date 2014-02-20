@@ -215,7 +215,8 @@ static daemon_t *
 daemon_setup(MR_Word request_handler,
     MR_String bind_address,
     MR_Integer port,
-    MR_Integer back_log)
+    MR_Integer back_log,
+    MR_Integer max_body)
 {
     daemon_t *daemon;
     int r;
@@ -257,6 +258,7 @@ daemon_setup(MR_Word request_handler,
     daemon->parser_settings.on_headers_complete = client_on_headers_complete;
     daemon->parser_settings.on_body = client_on_body;
     daemon->parser_settings.on_message_complete = client_on_message_complete;
+    daemon->max_body = max_body;
     daemon->request_handler = request_handler;
     daemon->periodics = NULL;
     daemon->clients = NULL;
@@ -360,7 +362,7 @@ make_client(daemon_t *daemon)
     daemon->clients = client;
 
     client->state = IDLE;
-    client->error_detected = NO_ERROR_YET;
+    client->deferred_error = NO_ERROR_YET;
     client->request = request_init(client);
 
     uv_tcp_init(loop, &client->tcp);
@@ -380,6 +382,7 @@ make_client(daemon_t *daemon)
     buffer_init(&client->request_acc.header_value_buf);
     client->request_acc.last_header_cb = NONE;
     buffer_init(&client->request_acc.body_buf);
+    client->request_acc.body_total = 0;
     client->request_acc.multipart_parser = 0;
 
     client->response_bufs = NULL;
@@ -406,6 +409,8 @@ static const char *state_to_string(enum client_state state)
             return "PREPARING_RESPONSE";
         case WRITING_RESPONSE:
             return "WRITING_RESPONSE";
+        case WRITING_FATAL_RESPONSE:
+            return "WRITING_FATAL_RESPONSE";
         case CLOSING:
             return "CLOSING";
         default:
@@ -423,6 +428,7 @@ client_set_state(client_t *client, enum client_state new_state)
             break;
         case READING_REQUEST_HEADER:
             assert(new_state == WRITING_CONTINUE_STATUS_LINE
+                || new_state == WRITING_FATAL_RESPONSE
                 || new_state == CLOSING);
             break;
         case WRITING_CONTINUE_STATUS_LINE:
@@ -432,6 +438,7 @@ client_set_state(client_t *client, enum client_state new_state)
         case READING_REQUEST_BODY:
             assert(new_state == PREPARING_RESPONSE
                 || new_state == WRITING_RESPONSE
+                || new_state == WRITING_FATAL_RESPONSE
                 || new_state == CLOSING);
             break;
         case PREPARING_RESPONSE:
@@ -441,6 +448,9 @@ client_set_state(client_t *client, enum client_state new_state)
         case WRITING_RESPONSE:
             assert(new_state == IDLE
                 || new_state == CLOSING);
+            break;
+        case WRITING_FATAL_RESPONSE:
+            assert(new_state == CLOSING);
             break;
         case CLOSING:
             assert(0 && "CLOSING is the last state");
@@ -630,7 +640,7 @@ client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf)
         size_t parsed;
         enum http_errno errnum;
 
-        LOG("[%d:%d] parser_execute: nread=%d, read_buf.len=%d\n",
+        DISABLE LOG("[%d:%d] parser_execute: nread=%d, read_buf.len=%d\n",
             client->id, client->request_count,
             nread, client->read_buf.len);
 
@@ -638,7 +648,7 @@ client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf)
             &client->daemon->parser_settings,
             client->read_buf.data, (size_t)client->read_buf.len);
 
-        LOG("[%d:%d] parser_execute returned: parsed=%d\n",
+        DISABLE LOG("[%d:%d] parser_execute returned: parsed=%d\n",
             client->id, client->request_count, parsed);
 
         buffer_shift(&client->read_buf, parsed);
@@ -691,7 +701,7 @@ client_on_message_begin(http_parser *parser)
 
     assert(client->state == IDLE);
     client_set_state(client, READING_REQUEST_HEADER);
-    client->error_detected = NO_ERROR_YET;
+    client->deferred_error = NO_ERROR_YET;
     client->request = request_init(client);
 
     /* Do not clear read_buf; would break pipelining. */
@@ -700,6 +710,7 @@ client_on_message_begin(http_parser *parser)
     buffer_clear(&client->request_acc.header_value_buf);
     client->request_acc.last_header_cb = NONE;
     buffer_clear(&client->request_acc.body_buf);
+    client->request_acc.body_total = 0;
     client->request_acc.multipart_parser = 0;
 
     assert(client->response_bufs == NULL);
@@ -750,7 +761,7 @@ maybe_done_prev_header(client_t *client, bool force_clear)
         if (!valid_field || !valid_value) {
             LOG("[%d:%d] invalid header\n",
                 client->id, client->request_count);
-            client->error_detected = BAD_REQUEST_400;
+            client->deferred_error = BAD_REQUEST_400;
             ret = false;
         } else {
             LOG("[%d:%d] header: '%s: %s'\n",
@@ -811,6 +822,7 @@ static int
 client_on_headers_complete(http_parser *parser)
 {
     client_t *client = client_from_parser_data(parser);
+    daemon_t *daemon = client->daemon;
     MR_String method;
     MR_String request_uri;
     MR_bool enforce_host_header;
@@ -841,17 +853,28 @@ client_on_headers_complete(http_parser *parser)
         client->id, client->request_count,
         method, request_uri);
 
+    if (!(client->parser.flags & F_CHUNKED) &&
+        client->parser.content_length != ULLONG_MAX &&
+        client->parser.content_length > daemon->max_body)
+    {
+        LOG("[%d:%d] content_length=%ld too big\n",
+            client->id, client->request_count,
+            client->parser.content_length);
+        client_write_413_request_entity_too_large(client);
+        return 0;
+    }
+
     enforce_host_header = http11_or_greater(&client->parser);
     if (request_prepare(method, request_uri, enforce_host_header,
             client->request, &client->request) == MR_FALSE)
     {
         LOG("[%d:%d] request_prepare failed\n",
             client->id, client->request_count);
-        client->error_detected = BAD_REQUEST_400;
+        client->deferred_error = BAD_REQUEST_400;
     }
 
     if (!http11_or_greater(&client->parser)
-        || client->error_detected != NO_ERROR_YET)
+        || client->deferred_error != NO_ERROR_YET)
     {
         really_write_continue = false;
     } else {
@@ -864,7 +887,7 @@ client_on_headers_complete(http_parser *parser)
             really_write_continue = true;
         } else {
             /* Cannot satisfy expectation. */
-            client->error_detected = EXPECTATION_FAILED_417;
+            client->deferred_error = EXPECTATION_FAILED_417;
             really_write_continue = false;
         }
     }
@@ -935,18 +958,36 @@ static int
 client_on_body(http_parser *parser, const char *at, size_t length)
 {
     client_t *client = client_from_parser_data(parser);
+    daemon_t *daemon = client->daemon;
+
+    if (client->request_acc.body_total == 0) {
+        LOG("[%d:%d] on_body first: %d bytes\n",
+            client->id, client->request_count, length);
+    } else {
+        DISABLE LOG("[%d:%d] on_body subseq: %d bytes\n",
+            client->id, client->request_count, length);
+    }
 
     assert(client->state == READING_REQUEST_BODY);
 
-    DISABLE LOG("[%d:%d] on_body: %d bytes\n",
-        client->id, client->request_count, length);
-
-    if (client->error_detected != NO_ERROR_YET) {
+    if (client->deferred_error != NO_ERROR_YET) {
         return 0;
     }
 
-    /* XXX limit on body length */
+    /*
+    ** We checked the content-length header earlier, but this checks
+    ** chunked requests which do not provide the length up front.
+    ** The multipart parser regularly drains body_buf so
+    ** we need a separate counter for total length.
+    */
+    if (client->request_acc.body_total + length > daemon->max_body) {
+        client_pause_read(client);
+        client_write_413_request_entity_too_large(client);
+        return 0;
+    }
+
     buffer_append(&client->request_acc.body_buf, at, length);
+    client->request_acc.body_total += length;
 
     /* Run the form-data parser if in effect. */
     if (client->request_acc.multipart_parser != 0) {
@@ -985,11 +1026,11 @@ client_on_message_complete(http_parser *parser)
 
     client_pause_read(client);
 
-    LOG("[%d:%d] on_message_complete: state=%s, error_detected=%d\n",
+    LOG("[%d:%d] on_message_complete: state=%s, deferred_error=%d\n",
         client->id, client->request_count,
-        state_to_string(client->state), client->error_detected);
+        state_to_string(client->state), client->deferred_error);
 
-    switch (client->error_detected) {
+    switch (client->deferred_error) {
         case BAD_REQUEST_400:
             client_write_400_bad_request(client);
             return 0;
@@ -999,7 +1040,7 @@ client_on_message_complete(http_parser *parser)
         case NO_ERROR_YET:
             break;
         default:
-            assert(client->error_detected == NO_ERROR_YET);
+            assert(client->deferred_error == NO_ERROR_YET);
             break;
     }
 
@@ -1031,7 +1072,24 @@ client_write_400_bad_request(client_t *client)
         "Content-Length: 0\r\n"
         "\r\n";
 
-    client_write_error_response(client, text, sizeof(text) - 1);
+    client_write_error_response(client, WRITING_RESPONSE,
+        text, sizeof(text) - 1);
+}
+
+static void
+client_write_413_request_entity_too_large(client_t *client)
+{
+    static char text[] =
+        "HTTP/1.1 413 Request Entity Too Large\r\n"
+        "Content-Length: 0\r\n"
+        "\r\n";
+
+    /*
+    ** This error is fatal as we don't want to read any of the body
+    ** after sending the error response.
+    */
+    client_write_error_response(client, WRITING_FATAL_RESPONSE,
+        text, sizeof(text) - 1);
 }
 
 static void
@@ -1042,12 +1100,13 @@ client_write_417_expectation_failed(client_t *client)
         "Content-Length: 0\r\n"
         "\r\n";
 
-    client_write_error_response(client, text, sizeof(text) - 1);
+    client_write_error_response(client, WRITING_RESPONSE,
+        text, sizeof(text) - 1);
 }
 
 static void
-client_write_error_response(client_t *client, const char *response,
-    size_t responselen)
+client_write_error_response(client_t *client, enum client_state new_state,
+    const char *response, size_t responselen)
 {
     const int nbufs = 1;
     uv_buf_t bufs[nbufs];
@@ -1055,7 +1114,7 @@ client_write_error_response(client_t *client, const char *response,
     LOG("[%d:%d] write error response\n",
         client->id, client->request_count);
 
-    client_set_state(client, WRITING_RESPONSE);
+    client_set_state(client, new_state);
 
     /* XXX set write timeout? */
 
@@ -1157,6 +1216,9 @@ client_after_write_response_bufs(uv_write_t *req, int status)
         /* Write timed out. */
         return;
     }
+
+    assert(client->state == WRITING_RESPONSE
+        || client->state == WRITING_FATAL_RESPONSE);
 
     client->response_bufs = NULL;
     client->response_bufs_length = 0;
@@ -1325,6 +1387,11 @@ client_after_full_response(client_t *client, int status)
 
     if (client->state == CLOSING) {
         /* Write timed out. */
+        return;
+    }
+
+    if (client->state == WRITING_FATAL_RESPONSE) {
+        client_close(client, __LINE__);
         return;
     }
 
