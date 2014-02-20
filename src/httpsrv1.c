@@ -22,8 +22,13 @@ enum {
 
 enum {
     /* XXX revisit these */
+    /*
+    ** We set a relatively large WRITE_TIMEOUT because the browser may prompt
+    ** the user to choose a path to save to before reading any more data.
+    */
     READ_START_TIMEOUT  = 5000, /* milliseconds */
     READ_CONT_TIMEOUT   = 5000, /* milliseconds */
+    WRITE_TIMEOUT       = 60000, /* milliseconds */
     KEEPALIVE_TIMEOUT   = 5000, /* milliseconds */
     RESPONSE_FILE_BUFSIZE = 65536 /* bytes */
 };
@@ -359,7 +364,7 @@ make_client(daemon_t *daemon)
     client->request = request_init(client);
 
     uv_tcp_init(loop, &client->tcp);
-    uv_async_init(loop, &client->async, client_on_async); 
+    uv_async_init(loop, &client->async, client_on_async);
     uv_timer_init(loop, &client->timer);
     http_parser_init(&client->parser, HTTP_REQUEST);
 
@@ -660,22 +665,18 @@ client_on_read_timeout(uv_timer_t *timer, int status)
     client_t *client = client_from_timer_data(timer);
     uv_loop_t *loop = timer->loop;
 
-    /* XXX why does this callback fire even after we called uv_timer_stop? */
-    if (!uv_is_active(timer)) {
-        LOG("[%d:%d] on_read_timeout ignored\n",
-            client->id, client->request_count);
-        return;
-    }
-
     LOG("[%d:%d] on_read_timeout: now=%ld, state=%s\n",
         client->id, client->request_count,
         uv_now(loop), state_to_string(client->state));
 
-    assert(client->state == IDLE
+    /* XXX why does this callback fire even after we called uv_timer_stop? */
+    /* This is why we must check the state. */
+    if (client->state == IDLE
         || client->state == READING_REQUEST_HEADER
-        || client->state == READING_REQUEST_BODY);
-
-    client_close(client, __LINE__);
+        || client->state == READING_REQUEST_BODY)
+    {
+        client_close(client, __LINE__);
+    }
 }
 
 static int
@@ -890,8 +891,6 @@ client_maybe_write_continue_status_line(client_t *client, bool really)
         bufs[0] = uv_buf_init(text, 0); /* dummy */
     }
 
-    /* XXX set write timeout */
-
     uv_write(&client->write_req, client_tcp_stream(client),
         bufs, nbufs, client_after_write_continue_status_line);
 }
@@ -1058,7 +1057,7 @@ client_write_error_response(client_t *client, const char *response,
 
     client_set_state(client, WRITING_RESPONSE);
 
-    /* XXX set write timeout */
+    /* XXX set write timeout? */
 
     bufs[0] = uv_buf_init((char *) response, responselen);
     uv_write(&client->write_req, client_tcp_stream(client),
@@ -1093,16 +1092,18 @@ static void
 client_on_async(uv_async_t *async, int status)
 {
     client_t *client = client_from_async_data(async);
+    uv_loop_t *loop = client->daemon->loop;
 
-    LOG("[%d:%d] on_async: status=%d\n",
-        client->id, client->request_count, status);
+    LOG("[%d:%d] on_async: status=%d, state=%s\n",
+        client->id, client->request_count, status,
+        state_to_string(client->state));
 
     /*
     ** uv_async_send causes the callback to be invoked one or more times;
     ** ignore the second and subsequent invocations.
     */
     if (client->state != PREPARING_RESPONSE) {
-        LOG("[%d:%d] on_async: ignored due to response_state\n",
+        LOG("[%d:%d] on_async: ignored\n",
             client->id, client->request_count);
         return;
     }
@@ -1112,11 +1113,34 @@ client_on_async(uv_async_t *async, int status)
 
     client_set_state(client, WRITING_RESPONSE);
 
-    /* XXX set write timeout */
+    /* Set write timeout. */
+    uv_update_time(loop);
+    uv_timer_start(&client->timer, client_on_write_timeout,
+        WRITE_TIMEOUT, WRITE_TIMEOUT);
 
+    /* Begin writing. */
     uv_write(&client->write_req, client_tcp_stream(client),
         client->response_bufs, client->response_bufs_length,
         client_after_write_response_bufs);
+}
+
+static void
+client_on_write_timeout(uv_timer_t *timer, int status)
+{
+    client_t *client = client_from_timer_data(timer);
+
+    LOG("[%d:%d] on_write_timeout: state=%s\n",
+        client->id, client->request_count,
+        state_to_string(client->state));
+
+    /*
+    ** There is no way to cancel a write request (yet?) so we just close.
+    ** This will cause write callbacks to be called with an error status.
+    */
+    if (client->state == WRITING_RESPONSE) {
+        client_close_response_file(client);
+        client_close(client, __LINE__);
+    }
 }
 
 static void
@@ -1124,10 +1148,15 @@ client_after_write_response_bufs(uv_write_t *req, int status)
 {
     client_t *client = client_from_stream_data(req->handle);
 
+    uv_timer_stop(&client->timer);
+
     LOG("[%d:%d] after_write_response_bufs: status=%d\n",
         client->id, client->request_count, status);
 
-    assert(client->state == WRITING_RESPONSE);
+    if (client->state == CLOSING) {
+        /* Write timed out. */
+        return;
+    }
 
     client->response_bufs = NULL;
     client->response_bufs_length = 0;
@@ -1146,6 +1175,7 @@ client_after_write_response_bufs(uv_write_t *req, int status)
 static void
 client_start_response_file(client_t *client)
 {
+    uv_loop_t *loop = client->daemon->loop;
     int r;
 
     LOG("[%d:%d] start_response_file: fd=%d\n",
@@ -1157,8 +1187,13 @@ client_start_response_file(client_t *client)
     buffer_reserve(&client->response_file_buf, RESPONSE_FILE_BUFSIZE);
     client->response_file_req.data = client;
 
+    /* Set write timeout. */
+    uv_update_time(loop);
+    uv_timer_start(&client->timer, client_on_write_timeout,
+        WRITE_TIMEOUT, WRITE_TIMEOUT);
+
     /* Start reading. */
-    r = uv_fs_read(client->daemon->loop,
+    r = uv_fs_read(loop,
         &client->response_file_req, client->response_file,
         client->response_file_buf.data, client->response_file_buf.cap, -1,
         client_on_read_response_file_buf);
@@ -1171,6 +1206,7 @@ static void
 client_on_read_response_file_buf(uv_fs_t *req)
 {
     client_t *client = client_from_fs(req);
+    uv_loop_t *loop = client->daemon->loop;
     ssize_t nread;
     const int nbufs = 1;
     uv_buf_t bufs[nbufs];
@@ -1178,10 +1214,16 @@ client_on_read_response_file_buf(uv_fs_t *req)
     nread = req->result;
     uv_fs_req_cleanup(req);
 
-    assert(client->state == WRITING_RESPONSE);
+    DISABLE LOG("[%d:%d] on_read_response_file_buf: nread=%d, state=%s\n",
+        client->id, client->request_count, nread,
+        state_to_string(client->state));
 
-    DISABLE LOG("[%d:%d] on_read_response_file_buf: nread=%d\n",
-        client->id, client->request_count, nread);
+    if (client->state == CLOSING) {
+        /* Write timeout. */
+        return;
+    }
+
+    assert(client->state == WRITING_RESPONSE);
 
     if (nread < 0) {
         client_after_response_file(client, -1);
@@ -1196,6 +1238,10 @@ client_on_read_response_file_buf(uv_fs_t *req)
     DISABLE LOG("[%d:%d] write response file buffer\n",
         client->id, client->request_count, client->response_file);
 
+    /* Renew timeout. */
+    uv_timer_again(&client->timer);
+
+    /* Begin writing. */
     bufs[0] = uv_buf_init(client->response_file_buf.data, nread);
     uv_write(&client->write_req, client_tcp_stream(client),
         bufs, nbufs, client_after_write_response_file_buf);
@@ -1207,11 +1253,20 @@ client_after_write_response_file_buf(uv_write_t *req, int status)
     client_t *client = client_from_stream_data(req->handle);
     int r;
 
-    DISABLE LOG("[%d:%d] after_write_response_file_buf: status=%d\n",
-        client->id, client->request_count, status);
+    DISABLE LOG("[%d:%d] after_write_response_file_buf: status=%d, state=%s\n",
+        client->id, client->request_count, status,
+        state_to_string(client->state));
+
+    if (client->state == CLOSING) {
+        /* Was closed earlier. */
+        return;
+    }
+
+    assert(client->state == WRITING_RESPONSE);
 
     if (status != 0) {
         client_after_response_file(client, status);
+        assert(client->state == CLOSING);
         return;
     }
 
@@ -1225,14 +1280,18 @@ client_after_write_response_file_buf(uv_write_t *req, int status)
         client_on_read_response_file_buf);
     if (r != 0) {
         client_after_response_file(client, -1);
+        assert(client->state == CLOSING);
     }
 }
 
 static void
 client_after_response_file(client_t *client, int status)
 {
-    LOG("[%d:%d] after_response_file: status=%d\n",
-        client->id, client->request_count, status);
+    LOG("[%d:%d] after_response_file: status=%d, state=%s\n",
+        client->id, client->request_count, status,
+        state_to_string(client->state));
+
+    uv_timer_stop(&client->timer);
 
     client_close_response_file(client);
 
@@ -1247,6 +1306,9 @@ client_close_response_file(client_t *client)
     if (client->response_file < 0)
         return;
 
+    LOG("[%d:%d] close_response_file: fd=%d\n",
+        client->id, client->request_count, client->response_file);
+
     /* Synchronous close (because of null callback). */
     uv_fs_close(client->daemon->loop, &close_req, client->response_file, NULL);
     client->response_file = -1;
@@ -1260,6 +1322,11 @@ client_after_full_response(client_t *client, int status)
     LOG("[%d:%d] after_full_response: status=%d, state=%s\n",
         client->id, client->request_count, status,
         state_to_string(client->state));
+
+    if (client->state == CLOSING) {
+        /* Write timed out. */
+        return;
+    }
 
     assert(client->state == WRITING_RESPONSE);
     client_set_state(client, IDLE);
@@ -1302,6 +1369,8 @@ client_close(client_t *client, int line)
     LOG("[%d:%d] close: caller=%s:%d, state=%s\n",
         client->id, client->request_count,
         __FILE__, line, state_to_string(client->state));
+
+    assert(client->response_file == -1);
 
     client_set_state(client, CLOSING);
 

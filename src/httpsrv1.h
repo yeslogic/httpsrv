@@ -47,9 +47,9 @@ enum last_header_cb {
 enum client_state {
     IDLE = 1,                   /* not yet reading a request */
     READING_REQUEST_HEADER,     /* in request header */
-    WRITING_CONTINUE_STATUS_LINE, /* writing 100 Continue status (if needed) */
+    WRITING_CONTINUE_STATUS_LINE, /* writing 100 Continue (if needed) */
     READING_REQUEST_BODY,       /* in request body */
-    PREPARING_RESPONSE,         /* waiting for user program to set response */
+    PREPARING_RESPONSE,         /* waiting for user program response */
     WRITING_RESPONSE,           /* writing out user program response */
     CLOSING                     /* closing */
 };
@@ -180,6 +180,9 @@ client_set_request_body(client_t *client);
 
 static void
 client_on_async(uv_async_t *async, int status);
+
+static void
+client_on_write_timeout(uv_timer_t *timer, int status);
 
 static void
 client_after_write_response_bufs(uv_write_t *req, int status);
