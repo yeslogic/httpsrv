@@ -40,23 +40,27 @@ set_response(Request, response(Status, AdditionalHeaders, Content), !IO) :-
     (
         Content = strings(ContentStrings),
         ContentLength = sum_length(ContentStrings),
+        MaybeLastModified = "",
         ( skip_body(Request) ->
             Body = cord.init
         ;
             Body = cord.from_list(ContentStrings)
         ),
-        FileFd = -1,
-        FileSize = 0
+        SetFileFd = -1,
+        SetFileSize = 0
     ;
         Content = file(StaticFile),
         ContentLength = StaticFile ^ file_size,
+        Mtime = StaticFile ^ file_mtime,
+        MaybeLastModified =
+            "Last-Modified: " ++ timestamp_to_http_date(Mtime) ++ "\r\n",
         Body = cord.init,
         ( skip_body(Request) ->
             static_file.close_static_file(StaticFile, !IO),
-            FileFd = -1,
-            FileSize = 0
+            SetFileFd = -1,
+            SetFileSize = 0
         ;
-            StaticFile = static_file(FileFd, FileSize)
+            StaticFile = static_file(SetFileFd, SetFileSize, _Mtime)
         )
     ),
 
@@ -67,6 +71,7 @@ set_response(Request, response(Status, AdditionalHeaders, Content), !IO) :-
     HeaderMid = list.map(render_response_header, AdditionalHeaders),
     HeaderPost = cord.from_list([
         "Content-Length: ", from_int(ContentLength), "\r\n",
+        MaybeLastModified,
         MaybeConnectionClose,
         "\r\n"
     ]),
@@ -74,7 +79,7 @@ set_response(Request, response(Status, AdditionalHeaders, Content), !IO) :-
         Body,
     ResponseList = cord.list(ResponseCord),
     set_response_2(Client, ResponseList, length(ResponseList),
-        FileFd, FileSize, !IO).
+        SetFileFd, SetFileSize, !IO).
 
 :- pred set_response_2(client::in, list(string)::in, int::in,
     int::in, int::in, io::di, io::uo) is det.

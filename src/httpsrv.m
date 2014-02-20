@@ -242,7 +242,8 @@
 :- type static_file
     --->    static_file(
                 fd          :: int,
-                file_size   :: int
+                file_size   :: int,
+                file_mtime  :: time_t
             ).
 
 %-----------------------------------------------------------------------------%

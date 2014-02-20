@@ -18,18 +18,18 @@
 :- import_module int.
 
 open_static_file(Path, Result, !IO) :-
-    open_static_file_2(Path, Fd, Size, Error, !IO),
+    open_static_file_2(Path, Fd, Size, Mtime, Error, !IO),
     ( Fd < 0 ->
         Result = error(Error)
     ;
-        Result = ok(static_file(Fd, Size))
+        Result = ok(static_file(Fd, Size, Mtime))
     ).
 
-:- pred open_static_file_2(string::in, int::out, int::out, string::out,
-    io::di, io::uo) is det.
+:- pred open_static_file_2(string::in, int::out, int::out, time_t::out,
+    string::out, io::di, io::uo) is det.
 
 :- pragma foreign_proc("C",
-    open_static_file_2(Path::in, Fd::out, Size::out, Error::out,
+    open_static_file_2(Path::in, Fd::out, Size::out, Mtime::out, Error::out,
         _IO0::di, _IO::uo),
     [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
         may_not_duplicate],
@@ -38,6 +38,7 @@ open_static_file(Path, Result, !IO) :-
 
     Fd = -1;
     Size = 0;
+    Mtime = 0;
 
     if (stat(Path, &st) < 0) {
         Error = MR_make_string_const(""stat failed"");
@@ -49,11 +50,12 @@ open_static_file(Path, Result, !IO) :-
             Error = MR_make_string_const(""open failed"");
         } else {
             Size = st.st_size;
+            Mtime = st.st_mtime;
         }
     }
 ").
 
-close_static_file(static_file(Fd, _Size), !IO) :-
+close_static_file(static_file(Fd, _Size, _Mtime), !IO) :-
     close_static_file_2(Fd, !IO).
 
 :- pred close_static_file_2(int::in, io::di, io::uo) is det.
