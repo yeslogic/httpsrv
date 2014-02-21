@@ -157,7 +157,7 @@
 
 :- type cookie_attribute
     --->    expires(time_t)
-    ;       max_age(int)    % strictly positive
+    ;       max_age(int)    % should be positive to maximise compatibility
     ;       domain(string)  % non-empty
     ;       path(string)    % non-empty
     ;       secure
