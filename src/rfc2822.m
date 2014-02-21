@@ -75,20 +75,26 @@ field_name_char(C) :-
 :- pred field_body(src::in, string::out, ps::in, ps::out) is det.
 
 field_body(Src, FieldBody, !PS) :-
-    zero_or_more_chars_to_string(field_body_char, Src, FieldBody, !PS).
+    run_of(field_body_char, Src, Chars, !PS),
+    string.from_char_list(Chars, FieldBody).
 
-:- pred field_body_char(char::in) is semidet.
+:- pred field_body_char(src::in, char::out, ps::in, ps::out) is semidet.
 
-field_body_char(C) :-
-    char.to_int(C, I),
-    % We do NOT allow NUL.
-    I > 0,
-    % As an extension, we allow any Unicode code points.
-    % I =< 127,
-
-    % XXX We do NOT support header line folding yet.
-    C \= ('\r'),
-    C \= ('\n').
+field_body_char(Src, Char, !PS) :-
+    next_char_no_progress(Src, C, !PS),
+    ( C = ('\r') ->
+        % Unfolding: remove CRLF before WSP.
+        next_char_no_progress(Src, ('\n'), !PS),
+        next_char_no_progress(Src, Char, !PS),
+        'WSP'(Char)
+    ;
+        char.to_int(C, I),
+        % We do NOT allow NUL.
+        I > 0,
+        % As an extension, we allow any Unicode code points.
+        % I =< 127,
+        Char = C
+    ).
 
 :- pred skip_WSP_chars(src::in, ps::in, ps::out) is semidet.
 
@@ -160,13 +166,13 @@ text(Src, Char, !PS) :-
 :- pred skip_FWS(src::in, ps::in, ps::out) is semidet.
 
 skip_FWS(Src, !PS) :-
-    % XXX We do NOT support header line folding yet.
+    % We assume that CRLFs for folding have been removed already.
     skip_WSP_chars(Src, !PS).
 
 :- pred skip_CFWS(src::in, unit::out, ps::in, ps::out) is semidet.
 
 skip_CFWS(Src, unit, !PS) :-
-    % XXX We do NOT support header line folding yet.
+    % We assume that CRLFs for folding have been removed already.
     skip_FWS(Src, !PS),
     ( comment(Src, _, !PS) ->
         skip_CFWS(Src, _, !PS)
@@ -243,10 +249,10 @@ qcontent(Src, Char, !PS) :-
     ; Char0 = ('\\') ->
         quoted_pair_tail(Src, Char, !PS)
     ; Char0 = ('\r') ->
-        % XXX We do NOT support header line folding yet.
+        % We assume that CRLFs for folding have been removed already.
         fail
     ; Char0 = ('\n') ->
-        % XXX We do NOT support header line folding yet.
+        % We assume that CRLFs for folding have been removed already.
         fail
     ;
         % This includes NO-WS-CTL / WSP / rest of US-ASCII.
