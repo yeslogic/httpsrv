@@ -21,6 +21,8 @@
 
 :- pred get_error(multipart_parser(T)::in, maybe_error::out) is det.
 
+:- pred valid_final_state(multipart_parser(T)::in) is semidet.
+
 :- pred execute(buffer::in, int::in, int::out,
     multipart_parser(T)::in, multipart_parser(T)::out, io::di, io::uo) is det
     <= callbacks(T).
@@ -47,12 +49,9 @@
 
 :- implementation.
 
-:- import_module bool.
-:- import_module char.
 :- import_module int.
 :- import_module list.
 :- import_module pair.
-:- import_module require.
 :- import_module string.
 
 :- import_module case_insensitive.
@@ -69,35 +68,56 @@
 
 :- type multipart_parser(T)
     --->    multipart_parser(
-                state           :: mpstate,
-                open_boundary   :: string,  % --boundary\r\n
-                close_boundary  :: string,  % \r\n--boundary
-                boundary_length :: int,     % same for open/close_boundary
-                userdata :: T
+                state                   :: mpstate,
+                dash_boundary           :: string,  % --boundary
+                dash_boundary_length    :: int,
+                delimiter               :: string,  % \r\n--boundary
+                delimiter_length        :: int,
+                userdata                :: T
             ).
 
 :- type mpstate
-    --->    before_first_part
-    ;       in_headers
-    ;       in_body
-    ;       just_after_part
-    ;       after_final_part
+    --->    preamble                    % expecting: dash-boundary
+    ;       seen_dash_boundary          % expecting: transport-padding CRLF
+    ;       in_part_headers             % looking for CRLF CRLF
+    ;       in_part_body                % looking for delimiter
+    ;       just_seen_delimiter         % expecting: transport-padding CRLF or "--"
+    ;       seen_close_delimiter        % expecting: transport-padding
+                                        %            [CRLF epilogue]
+    ;       epilogue
     ;       error(string).
+
+/*
+     multipart-body := [preamble CRLF]
+                       dash-boundary transport-padding CRLF
+                       body-part *encapsulation
+                       close-delimiter transport-padding
+                       [CRLF epilogue]
+
+     dash-boundary := "--" boundary
+
+     transport-padding := *LWSP-char
+
+     body-part := MIME-part-headers [CRLF *OCTET]
+
+     encapsulation := delimiter transport-padding CRLF body-part
+
+     delimiter := CRLF dash-boundary
+
+     close-delimiter := delimiter "--"
+*/
 
 %-----------------------------------------------------------------------------%
 
 init(Boundary, UserData) = PS :-
-    OpenBoundary = "--" ++ Boundary ++ "\r\n",
-    CloseBoundary = "\r\n--" ++ Boundary,
-    string.count_code_units(OpenBoundary, BoundaryLength),
-    string.count_code_units(CloseBoundary, CloseBoundaryLength),
-    expect(unify(BoundaryLength, CloseBoundaryLength), $module, $pred,
-        "open_boundary and close_boundary should have same length"),
+    DashBoundary = "--" ++ Boundary,
+    Delimiter = "\r\n" ++ DashBoundary,
 
-    PS ^ state = before_first_part,
-    PS ^ open_boundary = OpenBoundary,
-    PS ^ close_boundary = CloseBoundary,
-    PS ^ boundary_length = BoundaryLength,
+    PS ^ state = preamble,
+    PS ^ dash_boundary = DashBoundary,
+    PS ^ dash_boundary_length = count_code_units(DashBoundary),
+    PS ^ delimiter = Delimiter,
+    PS ^ delimiter_length = count_code_units(Delimiter),
     PS ^ userdata = UserData.
 
 get_userdata(PS) = PS ^ userdata.
@@ -105,11 +125,13 @@ get_userdata(PS) = PS ^ userdata.
 get_error(PS, Res) :-
     State = PS ^ state,
     (
-        ( State = before_first_part
-        ; State = in_headers
-        ; State = in_body
-        ; State = just_after_part
-        ; State = after_final_part
+        ( State = preamble
+        ; State = seen_dash_boundary
+        ; State = in_part_headers
+        ; State = in_part_body
+        ; State = just_seen_delimiter
+        ; State = seen_close_delimiter
+        ; State = epilogue
         ),
         Res = ok
     ;
@@ -117,21 +139,33 @@ get_error(PS, Res) :-
         Res = error(Error)
     ).
 
+valid_final_state(PS) :-
+    State = PS ^ state,
+    require_complete_switch [State]
+    (
+        State = seen_close_delimiter
+    ;
+        State = epilogue
+    ;
+        ( State = preamble
+        ; State = seen_dash_boundary
+        ; State = in_part_headers
+        ; State = in_part_body
+        ; State = just_seen_delimiter
+        ; State = error(_)
+        ),
+        fail
+    ).
+
 %-----------------------------------------------------------------------------%
 
-    % XXX major oversight in parser
-    % [RFC 2046] The boundary may be followed by zero or more characters of
-    % linear whitespace. It is then terminated by either another CRLF and
-    % the header fields for the next part, or by two CRLFs, in which case
-    % there are no header fields for the next part.
-
 execute(Buf, !BufPos, !PS, !IO) :-
-    !.PS ^ state = before_first_part,
-    !.PS ^ open_boundary = OpenBoundary,
-    !.PS ^ boundary_length = BoundaryLength,
-    find(Buf, OpenBoundary, BoundaryLength, BoundaryPos, !BufPos, !IO),
+    !.PS ^ state = preamble,
+    !.PS ^ dash_boundary = DashBoundary,
+    !.PS ^ dash_boundary_length = DashBoundaryLength,
+    find(Buf, DashBoundary, DashBoundaryLength, BoundaryPos, !BufPos, !IO),
     ( BoundaryPos >= 0 ->
-        !PS ^ state := in_headers,
+        !PS ^ state := seen_dash_boundary,
         execute(Buf, !BufPos, !PS, !IO)
     ;
         % XXX advance Buf to save memory if it grows too big
@@ -139,7 +173,19 @@ execute(Buf, !BufPos, !PS, !IO) :-
     ).
 
 execute(Buf, !BufPos, !PS, !IO) :-
-    !.PS ^ state = in_headers,
+    !.PS ^ state = seen_dash_boundary,
+    skip_transport_padding_CRLF(Buf, !BufPos, SkipResult, !IO),
+    ( SkipResult = 0 ->
+        true
+    ; SkipResult = 1 ->
+        !PS ^ state := in_part_headers,
+        execute(Buf, !BufPos, !PS, !IO)
+    ;
+        !PS ^ state := error("invalid opening boundary line")
+    ).
+
+execute(Buf, !BufPos, !PS, !IO) :-
+    !.PS ^ state = in_part_headers,
     HeadersStartPos = !.BufPos,
     find_crlf_crlf(Buf, CrlfCrlfPos, !BufPos, !IO),
     ( CrlfCrlfPos >= 0 ->
@@ -148,28 +194,27 @@ execute(Buf, !BufPos, !PS, !IO) :-
         have_header_block(Buf, HeadersStartPos, HeadersEndPos, !PS, !IO),
         execute(Buf, !BufPos, !PS, !IO)
     ;
-        % Should we abort if we find the open/close boundary first?
+        % Should we abort if we find the boundary / delimiter first?
         true
     ).
 
 execute(Buf, BufPos0, BufPos, !PS, !IO) :-
-    !.PS ^ state = in_body,
-    !.PS ^ close_boundary = CloseBoundary,
-    !.PS ^ boundary_length = BoundaryLength,
-    find(Buf, CloseBoundary, BoundaryLength, BodyEndPos, BufPos0, BufPos1,
-        !IO),
+    !.PS ^ state = in_part_body,
+    !.PS ^ delimiter = Delimiter,
+    !.PS ^ delimiter_length = DelimiterLength,
+    find(Buf, Delimiter, DelimiterLength, BodyEndPos, BufPos0, BufPos1, !IO),
     ( BodyEndPos >= 0 ->
-        % Found the closing boundary.
+        % Found the delimiter or close-delimiter.
         call_on_body_chunk(Buf, BufPos0, BodyEndPos, !PS, !IO),
         call_on_part_end(!PS),
-        !PS ^ state := just_after_part,
+        !PS ^ state := just_seen_delimiter,
         execute(Buf, BufPos1, BufPos, !PS, !IO)
     ;
-        % Not yet found the closing boundary.
+        % Not yet found the delimiter.
         % If necessary, give up smaller chunks of the body to prevent building
         % a large contiguous buffer, which is bad for GC.
         buffer.length(Buf, BufLen, !IO),
-        Avail = BufLen - BoundaryLength - BufPos0,
+        Avail = BufLen - DelimiterLength - BufPos0,
         ( Avail >= body_chunk_size_threshold ->
             BufPos = BufPos0 + round_down_to_power_of_two(Avail),
             call_on_body_chunk(Buf, BufPos0, BufPos, !PS, !IO)
@@ -179,38 +224,38 @@ execute(Buf, BufPos0, BufPos, !PS, !IO) :-
     ).
 
 execute(Buf, !BufPos, !PS, !IO) :-
-    !.PS ^ state = just_after_part,
-    % We have just seen the closing "\r\n--BOUNDARY".
-    % The next two bytes determines what follows:
-    %  CR/LF indicates there is another part,
-    %  two hyphens indicates that was the final part.
-    next_two_bytes(Buf, HaveBytes, ByteA, ByteB, !BufPos, !IO),
-    (
-        HaveBytes = no
+    !.PS ^ state = just_seen_delimiter,
+    % We have just seen the delimiter "\r\n--boundary".
+    after_delimiter(Buf, !BufPos, Result, !IO),
+    ( Result = 0 ->
         % Not enough data.
+        true
+    ; Result = 1 ->
+        % After the delimiter was two hyphens.
+        !PS ^ state := seen_close_delimiter,
+        execute(Buf, !BufPos, !PS, !IO)
     ;
-        HaveBytes = yes,
-        (
-            ByteA = char.to_int('\r'),
-            ByteB = char.to_int('\n')
-        ->
-            % Continue with next part.
-            !PS ^ state := in_headers,
-            execute(Buf, !BufPos, !PS, !IO)
-        ;
-            ByteA = char.to_int('-'),
-            ByteB = char.to_int('-')
-        ->
-            % We saw the final part.
-            !PS ^ state := after_final_part,
-            execute(Buf, !BufPos, !PS, !IO)
-        ;
-            !PS ^ state := error("improper closing boundary")
-        )
+        % After the delimiter was NOT two hyphens.
+        !PS ^ state := seen_dash_boundary,
+        execute(Buf, !BufPos, !PS, !IO)
+    ).
+
+execute(Buf, !BufPos, !PS, !IO) :-
+    !.PS ^ state = seen_close_delimiter,
+    skip_transport_padding_CRLF(Buf, !BufPos, SkipResult, !IO),
+    ( SkipResult = 0 ->
+        % Not found yet.
+        true
+    ; SkipResult = 1 ->
+        % Found CRLF.
+        !PS ^ state := epilogue,
+        execute(Buf, !BufPos, !PS, !IO)
+    ;
+        !PS ^ state := error("invalid closing boundary line")
     ).
 
 execute(Buf, _BufPos0, BufPos, !PS, !IO) :-
-    !.PS ^ state = after_final_part,
+    !.PS ^ state = epilogue,
     % Just consume the rest.  However, note that:
     % [RFC 2616] Unlike in RFC 2046, the epilogue of any multipart message MUST
     % be empty; HTTP applications MUST NOT transmit the epilogue (even if the
@@ -261,7 +306,7 @@ have_headers(Headers, !PS) :-
         call_on_headers_complete(Info, Continue, !PS),
         (
             Continue = ok,
-            !PS ^ state := in_body
+            !PS ^ state := in_part_body
         ;
             Continue = error(Error),
             !PS ^ state := error(Error)
@@ -422,24 +467,52 @@ call_on_part_end(PS0, PS) :-
 find_crlf_crlf(Buf, FoundPos, !BufPos, !IO) :-
     find(Buf, "\r\n\r\n", 4, FoundPos, !BufPos, !IO).
 
-:- pred next_two_bytes(buffer::in, bool::out, int::out, int::out,
-    int::in, int::out, io::di, io::uo) is det.
+:- pred skip_transport_padding_CRLF(buffer::in, int::in, int::out, int::out,
+    io::di, io::uo) is det.
 
 :- pragma foreign_proc("C",
-    next_two_bytes(Buf::in, HaveBytes::out, ByteA::out, ByteB::out,
-        BufPos0::in, BufPos::out, _IO0::di, _IO::uo),
-    [will_not_call_mercury, promise_pure, thread_safe],
+    skip_transport_padding_CRLF(Buf::in, BufPos0::in, BufPos::out,
+        SkipResult::out, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
 "
-    if (BufPos0 + 2 <= Buf->len) {
-        HaveBytes = MR_YES;
-        ByteA = (unsigned char) Buf->data[BufPos0];
-        ByteB = (unsigned char) Buf->data[BufPos0 + 1];
-        BufPos = BufPos0 + 2;
+    /* Skip LWSP-chars. */
+    while (BufPos0 < Buf->len) {
+        unsigned char c = Buf->data[BufPos0];
+        if (c != ' ' && c != '\t')
+            break;
+        BufPos0++;
+    }
+    BufPos = BufPos0;
+
+    if (Buf->len < BufPos + 2) {
+        SkipResult = 0; /* not found yet */
+    } else if (Buf->data[BufPos] == '\\r' && Buf->data[BufPos + 1] == '\\n') {
+        BufPos += 2;
+        SkipResult = 1; /* found CRLF */
     } else {
-        HaveBytes = MR_NO;
-        ByteA = -1;
-        ByteB = -1;
-        BufPos = BufPos0;
+        SkipResult = -1; /* error */
+    }
+").
+
+:- pred after_delimiter(buffer::in, int::in, int::out, int::out,
+    io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    after_delimiter(Buf::in, BufPos0::in, BufPos::out, Result::out,
+        _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
+    BufPos = BufPos0;
+
+    if (Buf->len < BufPos + 2) {
+        Result = 0; /* not enough data */
+    } else if (Buf->data[BufPos] == '-' && Buf->data[BufPos + 1] == '-') {
+        BufPos += 2;
+        Result = 1; /* found two hyphens */
+    } else {
+        Result = 2; /* something else */
     }
 ").
 

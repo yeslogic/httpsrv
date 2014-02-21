@@ -316,13 +316,17 @@ parse_formdata(Buf, !BufPos, !PS, IsError, ErrorString, !IO) :-
     "request_set_body_formdata").
 
 request_set_body_formdata(PS, !Req, Valid) :-
-    get_parts(get_userdata(PS), MaybeParts),
-    (
-        MaybeParts = ok(Parts),
-        !Req ^ body := multipart_formdata(Parts),
-        Valid = yes
+    ( valid_final_state(PS) ->
+        get_parts(get_userdata(PS), MaybeParts),
+        (
+            MaybeParts = ok(Parts),
+            !Req ^ body := multipart_formdata(Parts),
+            Valid = yes
+        ;
+            MaybeParts = error(_),
+            Valid = no
+        )
     ;
-        MaybeParts = error(_),
         Valid = no
     ).
 
