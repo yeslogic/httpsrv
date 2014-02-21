@@ -309,15 +309,22 @@ parse_formdata(Buf, !BufPos, !PS, IsError, ErrorString, !IO) :-
         IsError = yes
     ).
 
-:- func request_set_body_formdata(request, multipart_parser(formdata_accum))
-    = request.
+:- pred request_set_body_formdata(multipart_parser(formdata_accum)::in,
+    request::in, request::out, bool::out) is det.
 
-:- pragma foreign_export("C", request_set_body_formdata(in, in) = out,
+:- pragma foreign_export("C", request_set_body_formdata(in, in, out, out),
     "request_set_body_formdata").
 
-request_set_body_formdata(Req0, PS) = Req :-
-    Parts = get_parts(get_userdata(PS)),
-    Req = Req0 ^ body := multipart_formdata(Parts).
+request_set_body_formdata(PS, !Req, Valid) :-
+    get_parts(get_userdata(PS), MaybeParts),
+    (
+        MaybeParts = ok(Parts),
+        !Req ^ body := multipart_formdata(Parts),
+        Valid = yes
+    ;
+        MaybeParts = error(_),
+        Valid = no
+    ).
 
 %-----------------------------------------------------------------------------%
 

@@ -1147,15 +1147,19 @@ client_write_error_response(client_t *client, enum client_state new_state,
 static bool
 client_set_request_body(client_t *client)
 {
+    MR_bool valid;
+
     LOG("[%d:%d] set_request_body\n",
         client->id, client->request_count);
 
     if (client->request_acc.multipart_parser != 0) {
-        client->request = request_set_body_formdata(client->request,
-            client->request_acc.multipart_parser);
+        request_set_body_formdata(client->request_acc.multipart_parser,
+            client->request, &client->request, &valid);
+        if (!valid) {
+            return false;
+        }
     } else {
         MR_String body;
-        MR_bool valid;
 
         /* Perhaps we need to support other charsets here. */
         body = buffer_to_string_utf8(&client->request_acc.body_buf, &valid);

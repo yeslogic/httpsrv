@@ -11,7 +11,8 @@
 
 :- func init = formdata_accum.
 
-:- func get_parts(formdata_accum) = assoc_list(string, formdata).
+:- pred get_parts(formdata_accum::in,
+    maybe_error(assoc_list(string, formdata))::out) is det.
 
 :- instance multipart_parser.callbacks(formdata_accum).
 
@@ -19,8 +20,6 @@
 %-----------------------------------------------------------------------------%
 
 :- implementation.
-
-:- import_module require.
 
 :- import_module buffer.
 
@@ -45,12 +44,18 @@ formdata_init =
 
 %-----------------------------------------------------------------------------%
 
-get_parts(Acc) = Parts :-
+get_parts(Acc, MaybeParts) :-
     Acc = formdata_accum(RevParts, CurName, CurPart),
-    list.reverse(RevParts, Parts),
     % Sanity check.
-    expect(CurName `unify` "", $module, $pred, "incomplete part"),
-    expect(CurPart `unify` formdata_init, $module, $pred, "incomplete part").
+    (
+        CurName = "",
+        CurPart = formdata_init
+    ->
+        list.reverse(RevParts, Parts),
+        MaybeParts = ok(Parts)
+    ;
+        MaybeParts = error("incomplete part detected")
+    ).
 
 %-----------------------------------------------------------------------------%
 
