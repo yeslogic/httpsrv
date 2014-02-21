@@ -26,6 +26,7 @@
 
 :- import_module httpsrv.formdata_accum.
 :- import_module httpsrv.parse_url.
+:- import_module httpsrv.url.
 
 :- pragma foreign_decl("C", "
     typedef struct client client_t;
@@ -39,7 +40,7 @@
 :- pragma foreign_export("C", request_init(in) = out, "request_init").
 
 request_init(Client) =
-    request(Client, other(""), "", url_init, no, [], init_headers, [],
+    request(Client, other(""), "", url.init, no, [], init_headers, [],
         string("")).
 
 %-----------------------------------------------------------------------------%
@@ -148,7 +149,7 @@ request_set_request_uri(RequestUri, HostFieldValue, !Req) :-
 
 make_url(RequestUri, HostFieldValue, Url) :-
     ( RequestUri = "*" ->
-        Url = url_init
+        Url = url.init
     ;
         parse_url.parse_url(RequestUri, Url0),
         ( is_absolute_url(Url0) ->

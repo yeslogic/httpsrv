@@ -108,6 +108,8 @@
 
 :- func get_body(request) = content.
 
+:- func get_referrer(request) = maybe(string).
+
 :- pred get_client_address_ipv4(request::in, maybe(string)::out,
     io::di, io::uo) is det.
 
@@ -200,10 +202,12 @@
 :- include_module httpsrv.response.
 :- include_module httpsrv.response_header.
 :- include_module httpsrv.static_file.
+:- include_module httpsrv.url.
 
 :- use_module httpsrv.parse_url.
 :- use_module httpsrv.response.
 :- use_module httpsrv.static_file.
+:- use_module httpsrv.url.
 
 %-----------------------------------------------------------------------------%
 
@@ -249,10 +253,6 @@
             ).
 
 %-----------------------------------------------------------------------------%
-
-:- func url_init = url.
-
-url_init = url(no, no, no, no, no, no).
 
 :- pred method(string, method).
 :- mode method(in, out) is semidet.
@@ -361,6 +361,22 @@ get_headers(Request) = Request ^ headers.
 get_cookies(Request) = Request ^ cookies.
 
 get_body(Request) = Request ^ body.
+
+get_referrer(Request) = MaybeReferrer :-
+    (
+        search_field(Request ^ headers, referer, [Value]),
+        parse_url.parse_url(Value, RelUrl)
+    ->
+        BaseUrl = get_url(Request),
+        url.resolve_relative(BaseUrl, RelUrl, Resolved),
+        MaybeReferrer = yes(url.to_string(Resolved))
+    ;
+        MaybeReferrer = no
+    ).
+
+:- func referer = case_insensitive.
+
+referer = case_insensitive("referer"). % sic
 
 get_client_address_ipv4(Request, Res, !IO) :-
     client_address_ipv4(Request ^ client, Address, !IO),

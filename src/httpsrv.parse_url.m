@@ -7,8 +7,6 @@
 
 :- pred parse_url(string::in, url::out) is semidet.
 
-:- pred is_absolute_url(url::in) is semidet.
-
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
 
@@ -106,11 +104,6 @@ maybe_field(Input, ParseResult, Field, MaybeString) :-
         SUCCESS_INDICATOR = MR_FALSE;
     }
 ").
-
-%-----------------------------------------------------------------------------%
-
-is_absolute_url(Url) :-
-    Url ^ scheme = yes(_).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
