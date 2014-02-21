@@ -60,10 +60,6 @@
 :- use_module rfc2183.
 :- use_module rfc2822.
 
-:- pragma foreign_decl("C", local, "
-    #include <string.h> /* memmem is GNU extension */
-").
-
 %-----------------------------------------------------------------------------%
 
 :- type multipart_parser(T)
@@ -106,6 +102,46 @@
 
      close-delimiter := delimiter "--"
 */
+
+%-----------------------------------------------------------------------------%
+
+:- pragma foreign_decl("C", local, "
+#include <string.h> /* memmem is GNU extension */
+
+static void *
+local_memmem(const void *haystack, size_t haystacklen,
+    const void *needle, size_t needlelen);
+").
+
+:- pragma foreign_code("C",
+"
+static void *
+local_memmem(const void *haystack, size_t haystacklen,
+             const void *needle, size_t needlelen)
+{
+#ifdef _GNU_SOURCE
+    return memmem(haystack, haystacklen, needle, needlelen);
+#else
+    const unsigned char *hayst = haystack;
+    const unsigned char *needl = needle;
+    const unsigned char *p = haystack;
+
+    if (needlelen == 0)
+        return (void *) haystack;
+
+    while (needlelen <= haystacklen - (p - hayst)) {
+        p = memchr(p, needl[0], haystacklen - (p - hayst));
+        if (p == NULL)
+            break;
+        if (0 == memcmp(p, needle, needlelen))
+            return (void *) p;
+        p++;
+    }
+
+    return NULL;
+#endif
+}
+").
 
 %-----------------------------------------------------------------------------%
 
@@ -451,7 +487,7 @@ call_on_part_end(PS0, PS) :-
 
     haystack = Buf->data + Pos0;
     haystacklen = Buf->len - Pos0;
-    p = memmem(haystack, haystacklen, Needle, NeedleLen);
+    p = local_memmem(haystack, haystacklen, Needle, NeedleLen);
     if (p != NULL) {
         NeedlePos = (const char *)p - Buf->data;
         Pos = NeedlePos + NeedleLen;
