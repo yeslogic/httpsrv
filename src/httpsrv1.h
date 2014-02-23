@@ -176,6 +176,9 @@ static void
 client_write_417_expectation_failed(client_t *client);
 
 static void
+client_write_fatal_400_bad_request(client_t *client);
+
+static void
 client_write_fatal_413_request_entity_too_large(client_t *client);
 
 static void

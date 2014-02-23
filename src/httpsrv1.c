@@ -1013,7 +1013,9 @@ client_on_body(http_parser *parser, const char *at, size_t length)
         if (is_error) {
             LOG("[%d:%d] parse_formdata error: %s\n",
                 client->id, client->request_count, error_string);
-            return -1;
+            client_pause_read(client);
+            client_write_fatal_400_bad_request(client);
+            return 0;
         }
     }
 
@@ -1090,6 +1092,22 @@ client_write_417_expectation_failed(client_t *client)
         "\r\n";
 
     client_write_error_response(client, WRITING_RESPONSE,
+        text, sizeof(text) - 1);
+}
+
+static void
+client_write_fatal_400_bad_request(client_t *client)
+{
+    static char text[] =
+        "HTTP/1.1 400 Bad Request\r\n"
+        "Content-Length: 0\r\n"
+        "\r\n";
+
+    /*
+    ** This error is fatal as we don't want to read any of the body
+    ** after sending the error response.
+    */
+    client_write_error_response(client, WRITING_FATAL_RESPONSE,
         text, sizeof(text) - 1);
 }
 

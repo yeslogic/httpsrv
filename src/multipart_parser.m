@@ -204,8 +204,14 @@ execute(Buf, !BufPos, !PS, !IO) :-
         !PS ^ state := seen_dash_boundary,
         execute(Buf, !BufPos, !PS, !IO)
     ;
-        % XXX advance Buf to save memory if it grows too big
-        true
+        % Don't wait too long to find the boundary.
+        buffer.length(Buf, BufLen, !IO),
+        PreambleSize = BufLen - !.BufPos,
+        ( PreambleSize > max_preamble_size ->
+            !PS ^ state := error("maximum preamble size exceeded")
+        ;
+            true
+        )
     ).
 
 execute(Buf, !BufPos, !PS, !IO) :-
@@ -301,6 +307,12 @@ execute(Buf, _BufPos0, BufPos, !PS, !IO) :-
 
 execute(_Buf, !BufPos, !PS, !IO) :-
     !.PS ^ state = error(_).
+
+%-----------------------------------------------------------------------------%
+
+:- func max_preamble_size = int.
+
+max_preamble_size = 128.
 
 %-----------------------------------------------------------------------------%
 
