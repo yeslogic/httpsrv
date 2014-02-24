@@ -86,7 +86,10 @@ real_handler(Request, !IO) :-
 echo_handler(Request, response(Status, AdditionalHeaders, Content), !IO) :-
     get_client_address_ipv4(Request, MaybeClientAddress, !IO),
     Status = ok_200,
-    AdditionalHeaders = [set_cookie("my-cookie" - "my-cookie-value", [])],
+    AdditionalHeaders = [
+        content_type_charset_utf8("text/plain"),
+        set_cookie("my-cookie" - "my-cookie-value", [])
+    ],
     Method = get_method(Request),
     Url = get_url(Request),
     MaybePathDecoded = get_path_decoded(Request),
@@ -162,7 +165,7 @@ static_path_handler(Request, FilePath,
         (
             OpenResult = ok(StaticFile),
             Status = ok_200,
-            AdditionalHeaders = [content_type("application/octet-stream")],
+            AdditionalHeaders = [guess_content_type(FilePath)],
             Content = file(StaticFile)
         ;
             OpenResult = error(Error),
@@ -183,6 +186,15 @@ static_path_handler(Request, FilePath,
         Status = not_implemented_501,
         AdditionalHeaders = [],
         Content = strings([])
+    ).
+
+:- func guess_content_type(string) = response_header.
+
+guess_content_type(FileName) = Header :-
+    ( string.suffix(FileName, ".html") ->
+        Header = content_type_charset_utf8("text/html")
+    ;
+        Header = content_type("application/octet-stream")
     ).
 
 %-----------------------------------------------------------------------------%
