@@ -216,7 +216,8 @@ daemon_setup(MR_Word request_handler,
     MR_String bind_address,
     MR_Integer port,
     MR_Integer back_log,
-    MR_Integer max_body)
+    MR_Integer max_body,
+    MR_String *error_message)
 {
     daemon_t *daemon;
     int r;
@@ -239,14 +240,18 @@ daemon_setup(MR_Word request_handler,
 
     r = uv_tcp_init(daemon->loop, &daemon->server);
     if (r != 0) {
-        LOG("[srv] tcp init error=%d\n", r);
+        *error_message = MR_make_string(MR_ALLOC_SITE_NONE,
+            "%s", uv_strerror(uv_last_error(daemon->loop)));
+        LOG("[srv] tcp init error=%d (%s)\n", r, *error_message);
         daemon_cleanup(daemon);
         return NULL;
     }
 
     r = uv_tcp_bind(&daemon->server, uv_ip4_addr(bind_address, port));
     if (r != 0) {
-        LOG("[srv] tcp bind error=%d\n", r);
+        *error_message = MR_make_string(MR_ALLOC_SITE_NONE,
+            "%s", uv_strerror(uv_last_error(daemon->loop)));
+        LOG("[srv] tcp bind error=%d (%s)\n", r, *error_message);
         daemon_cleanup(daemon);
         return NULL;
     }
@@ -267,13 +272,16 @@ daemon_setup(MR_Word request_handler,
     r = uv_listen(stream_from_tcp(&daemon->server), back_log,
         server_on_connect);
     if (r != 0) {
-        LOG("[srv] listen error=%d\n", r);
+        *error_message = MR_make_string(MR_ALLOC_SITE_NONE,
+            "%s", uv_strerror(uv_last_error(daemon->loop)));
+        LOG("[srv] listen error=%d (%s)\n", r, *error_message);
         daemon_cleanup(daemon);
         return NULL;
     }
 
     daemon->state = DAEMON_RUNNING;
 
+    *error_message = MR_make_string_const("");
     return daemon;
 }
 

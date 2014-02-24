@@ -275,29 +275,28 @@ setup(RequestHandler, Settings, Res, !IO) :-
     MaxBody = FindInt(pred(max_body(X)::in, X::out) is semidet, 1024 * 1024),
 
     setup_2(RequestHandler, BindAddress, Port, BackLog, MaxBody, Daemon,
-        Ok, !IO),
+        Ok, ErrorMessage, !IO),
     (
         Ok = yes,
         Res = ok(Daemon)
     ;
         Ok = no,
-        % XXX better error message
-        Res = error("(no error details yet)")
+        Res = error(ErrorMessage)
     ).
 
 :- pred setup_2(request_handler::in(request_handler),
-    string::in, int::in, int::in, int::in, daemon::out, bool::out,
+    string::in, int::in, int::in, int::in, daemon::out, bool::out, string::out,
     io::di, io::uo) is det.
 
 :- pragma foreign_proc("C",
     setup_2(RequestHandler::in(request_handler),
         BindAddress::in, Port::in, BackLog::in, MaxMessageBody::in,
-        Daemon::out, Ok::out, _IO0::di, _IO::uo),
+        Daemon::out, Ok::out, ErrorMessage::out, _IO0::di, _IO::uo),
     [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
         may_not_duplicate],
 "
     Daemon = daemon_setup(RequestHandler, BindAddress, Port, BackLog,
-        MaxMessageBody);
+        MaxMessageBody, &ErrorMessage);
     Ok = (Daemon) ? MR_YES : MR_NO;
 ").
 

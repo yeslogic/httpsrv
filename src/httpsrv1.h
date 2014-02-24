@@ -103,7 +103,8 @@ daemon_setup(MR_Word request_handler,
     MR_String bind_address,
     MR_Integer port,
     MR_Integer back_log,
-    MR_Integer max_body);
+    MR_Integer max_body,
+    MR_String *error_message);
 
 static void
 daemon_cleanup(daemon_t *daemon);
