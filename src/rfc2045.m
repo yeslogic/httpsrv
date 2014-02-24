@@ -19,6 +19,9 @@
 :- pred zero_or_more_parameters_list(src::in, parameters::out, ps::in, ps::out)
     is semidet.
 
+:- pred parameter_attribute(src::in, case_insensitive::out, ps::in, ps::out)
+    is semidet.
+
 :- pred token(src::in, string::out, ps::in, ps::out) is semidet.
 
 :- pred content_type_defaults(case_insensitive::out, parameters::out) is det.
@@ -70,9 +73,6 @@ semicolon_then_parameter(Src, unit, !Params, !PS) :-
     parameter_value(Src, Value, !PS),
     % Do not allow duplicate parameter names.
     map.insert(Attrib, Value, !Params).
-
-:- pred parameter_attribute(src::in, case_insensitive::out, ps::in, ps::out)
-    is semidet.
 
 parameter_attribute(Src, Attrib, !PS) :-
     token(Src, Token, !PS),
