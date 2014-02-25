@@ -1,17 +1,12 @@
+MAIN_TARGET = httpsrv_test
 GRADE = hlc.par.gc
 MCFLAGS += --grade $(GRADE)
 
-EXTERNALS_DIR = ../externals
+HTTPSRV_DIR = ..
+include httpsrv.options
 
-MCFLAGS += --no-ansi-c
-MCFLAGS += --c-include-dir ../src
-MCFLAGS += --c-include-dir $(EXTERNALS_DIR)/libuv/include
-MCFLAGS += --c-include-dir $(EXTERNALS_DIR)/http-parser
-
-CFLAGS-multipart_parser += -D_GNU_SOURCE
-
-MLOBJS-httpsrv_test += $(EXTERNALS_DIR)/libuv/libuv.a
-MLOBJS-httpsrv_test += $(EXTERNALS_DIR)/http-parser/http_parser.o
-MLLIBS-httpsrv_test += -lpthread
+MLOBJS-httpsrv_test = $(HTTPSRV_OBJS)
 
 -include Mercury.params
+
+# vim: ft=make

@@ -1,0 +1,10 @@
+MCFLAGS += --c-include-dir $(HTTPSRV_DIR)/src
+MCFLAGS += --c-include-dir $(HTTPSRV_DIR)/externals/libuv/include
+MCFLAGS += --c-include-dir $(HTTPSRV_DIR)/externals/http-parser
+
+CFLAGS-multipart_parser += -D_GNU_SOURCE
+
+HTTPSRV_OBJS += $(HTTPSRV_DIR)/externals/libuv/libuv.a
+HTTPSRV_OBJS += $(HTTPSRV_DIR)/externals/http-parser/http_parser.o
+
+# vim: ft=make
