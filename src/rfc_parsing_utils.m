@@ -6,18 +6,11 @@
 :- interface.
 
 :- import_module char.
-:- import_module list.
 :- import_module parsing_utils.
 
 %-----------------------------------------------------------------------------%
 
 :- pred call_skip_pred(src::in, ps::in, ps::out) is semidet.
-
-:- pred run_of(pred(src, T, ps, ps)::in(pred(in, out, in, out) is semidet),
-    src::in, list(T)::out, ps::in, ps::out) is det.
-
-:- pred run_of_chars(pred(char)::in(pred(in) is semidet),
-    src::in, list(char)::out, ps::in, ps::out) is det.
 
 :- pred zero_or_more_chars_to_string(pred(char)::in(pred(in) is semidet),
     src::in, string::out, ps::in, ps::out) is det.
@@ -30,39 +23,46 @@
 
 :- implementation.
 
-:- import_module string.
+:- import_module int.
+:- import_module require.
 
 call_skip_pred(Src, !PS) :-
     get_skip_whitespace_pred(Src, Skip),
     Skip(Src, _, !PS).
 
-run_of(P, Src, Xs, !PS) :-
-    ( P(Src, X, !PS) ->
-        run_of(P, Src, Xs1, !PS),
-        Xs = [X | Xs1]
+zero_or_more_chars_to_string(P, Src, String, !PS) :-
+    current_offset(Src, Start, !PS),
+    while(P, Src, !PS),
+    current_offset(Src, End, !PS),
+    ( input_substring(Src, Start, End, StringPrime) ->
+        String = StringPrime
     ;
-        Xs = []
+        unexpected($module, $pred, "input_substring failed")
     ).
 
-run_of_chars(P, Src, Chars, !PS) :-
+one_or_more_chars_to_string(P, Src, String, !PS) :-
+    current_offset(Src, Start, !PS),
+    while(P, Src, !PS),
+    current_offset(Src, End, !PS),
+    End > Start,
+    ( input_substring(Src, Start, End, StringPrime) ->
+        String = StringPrime
+    ;
+        unexpected($module, $pred, "input_substring failed")
+    ).
+
+:- pred while(pred(char)::in(pred(in) is semidet), src::in, ps::in, ps::out)
+    is det.
+
+while(P, Src, !PS) :-
     (
         next_char_no_progress(Src, Char, !PS),
         P(Char)
     ->
-        run_of_chars(P, Src, Chars1, !PS),
-        Chars = [Char | Chars1]
+        while(P, Src, !PS)
     ;
-        Chars = []
+        true
     ).
-
-zero_or_more_chars_to_string(P, Src, String, !PS) :-
-    run_of_chars(P, Src, Chars, !PS),
-    string.from_char_list(Chars, String).
-
-one_or_more_chars_to_string(P, Src, String, !PS) :-
-    run_of_chars(P, Src, Chars, !PS),
-    Chars = [_ | _],
-    string.from_char_list(Chars, String).
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et

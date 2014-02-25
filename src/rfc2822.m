@@ -75,8 +75,19 @@ field_name_char(C) :-
 :- pred field_body(src::in, string::out, ps::in, ps::out) is det.
 
 field_body(Src, FieldBody, !PS) :-
-    run_of(field_body_char, Src, Chars, !PS),
-    string.from_char_list(Chars, FieldBody).
+    field_body_revchars(Src, [], RevChars, !PS),
+    string.from_rev_char_list(RevChars, FieldBody).
+
+:- pred field_body_revchars(src::in, list(char)::in, list(char)::out,
+    ps::in, ps::out) is det.
+
+field_body_revchars(Src, RevChars0, RevChars, !PS) :-
+    ( field_body_char(Src, Char, !PS) ->
+        RevChars1 = [Char | RevChars0],
+        field_body_revchars(Src, RevChars1, RevChars, !PS)
+    ;
+        RevChars = RevChars0
+    ).
 
 :- pred field_body_char(src::in, char::out, ps::in, ps::out) is semidet.
 
@@ -235,10 +246,21 @@ quoted_string(Src, String, !PS) :-
     % Not sure why RFC 2822 has explicit optional CFWS here.
     % call_skip_pred(Src, _, !PS),
     'DQUOTE'(Src, !PS),
-    run_of(qcontent, Src, CharList, !PS),
+    qcontent_revchars(Src, [], RevChars, !PS),
     'DQUOTE'(Src, !PS),
-    string.from_char_list(CharList, String),
+    string.from_rev_char_list(RevChars, String),
     call_skip_pred(Src, !PS). % [CFWS] in RFC 2822
+
+:- pred qcontent_revchars(src::in, list(char)::in, list(char)::out,
+    ps::in, ps::out) is det.
+
+qcontent_revchars(Src, RevChars0, RevChars, !PS) :-
+    ( qcontent(Src, Char, !PS) ->
+        RevChars1 = [Char | RevChars0],
+        qcontent_revchars(Src, RevChars1, RevChars, !PS)
+    ;
+        RevChars = RevChars0
+    ).
 
 :- pred qcontent(src::in, char::out, ps::in, ps::out) is semidet.
 
