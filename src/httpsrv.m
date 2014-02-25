@@ -113,6 +113,8 @@
 :- pred get_client_address_ipv4(request::in, maybe(string)::out,
     io::di, io::uo) is det.
 
+:- func method_string(method) = string.
+
 %-----------------------------------------------------------------------------%
 
 % Form-data
@@ -191,6 +193,7 @@
 
 :- import_module bool.
 :- import_module int.
+:- import_module string.
 :- import_module time.
 
 :- import_module buffer.
@@ -394,6 +397,13 @@ get_client_address_ipv4(Request, Res, !IO) :-
 "
     String = client_address_ipv4(Client, MR_ALLOC_ID);
 ").
+
+method_string(delete) = "DELETE".
+method_string(get) = "GET".
+method_string(head) = "HEAD".
+method_string(post) = "POST".
+method_string(put) = "PUT".
+method_string(other(String)) = string.to_upper(String).
 
 %-----------------------------------------------------------------------------%
 
