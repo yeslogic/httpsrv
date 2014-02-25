@@ -274,7 +274,7 @@ setup(RequestHandler, Settings, Res, !IO) :-
     FindInt = find(Settings),
     BindAddress = FindStr(pred(bind_address(X)::in, X::out) is semidet, "127.0.0.1"),
     Port = FindInt(pred(port(X)::in, X::out) is semidet, 80),
-    BackLog = FindInt(pred(back_log(X)::in, X::out) is semidet, 1),
+    BackLog = FindInt(pred(back_log(X)::in, X::out) is semidet, 128),
     MaxBody = FindInt(pred(max_body(X)::in, X::out) is semidet, 1024 * 1024),
 
     setup_2(RequestHandler, BindAddress, Port, BackLog, MaxBody, Daemon,
