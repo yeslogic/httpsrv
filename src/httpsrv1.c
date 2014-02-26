@@ -37,14 +37,19 @@ enum {
 ** Debugging
 */
 
-#define DISABLE if(0)
-#define LOG logger
+#define LOG_LEVEL   (6)
+#define LOG_ERROR   if (LOG_LEVEL >= 3) logger
+#define LOG_WARN    if (LOG_LEVEL >= 4) logger
+#define LOG_NOTICE  if (LOG_LEVEL >= 5) logger
+#define LOG_INFO    if (LOG_LEVEL >= 6) logger
+#define LOG_DEBUG   if (LOG_LEVEL >= 7) logger
 
 static void
 logger(const char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
+    fprintf(stderr, "httpsrv ");
     vfprintf(stderr, fmt, ap);
     va_end(ap);
 }
@@ -242,7 +247,7 @@ daemon_setup(MR_Word request_handler,
     if (r != 0) {
         *error_message = MR_make_string(MR_ALLOC_SITE_NONE,
             "%s", uv_strerror(uv_last_error(daemon->loop)));
-        LOG("[srv] tcp init error=%d (%s)\n", r, *error_message);
+        LOG_ERROR("[srv] tcp init error=%d (%s)\n", r, *error_message);
         daemon_cleanup(daemon);
         return NULL;
     }
@@ -251,7 +256,7 @@ daemon_setup(MR_Word request_handler,
     if (r != 0) {
         *error_message = MR_make_string(MR_ALLOC_SITE_NONE,
             "%s", uv_strerror(uv_last_error(daemon->loop)));
-        LOG("[srv] tcp bind error=%d (%s)\n", r, *error_message);
+        LOG_ERROR("[srv] tcp bind error=%d (%s)\n", r, *error_message);
         daemon_cleanup(daemon);
         return NULL;
     }
@@ -274,7 +279,7 @@ daemon_setup(MR_Word request_handler,
     if (r != 0) {
         *error_message = MR_make_string(MR_ALLOC_SITE_NONE,
             "%s", uv_strerror(uv_last_error(daemon->loop)));
-        LOG("[srv] listen error=%d (%s)\n", r, *error_message);
+        LOG_ERROR("[srv] listen error=%d (%s)\n", r, *error_message);
         daemon_cleanup(daemon);
         return NULL;
     }
@@ -288,7 +293,7 @@ daemon_setup(MR_Word request_handler,
 static void
 daemon_cleanup(daemon_t *daemon)
 {
-    LOG("[srv] cleanup\n");
+    LOG_INFO("[srv] cleanup\n");
 
     uv_close(handle_from_signal(&daemon->signal1), NULL);
     uv_close(handle_from_signal(&daemon->signal2), NULL);
@@ -327,7 +332,7 @@ daemon_add_periodic(daemon_t *daemon, MR_Integer milliseconds,
     uv_timer_start(&periodic->timer, daemon_on_periodic_timer,
         milliseconds, milliseconds);
 
-    LOG("[srv] add periodic: now=%ld, milliseconds=%ld\n",
+    LOG_INFO("[srv] add periodic: now=%ld, milliseconds=%ld\n",
         uv_now(daemon->loop), milliseconds);
 }
 
@@ -465,7 +470,7 @@ client_set_state(client_t *client, enum client_state new_state)
             break;
     }
 
-    LOG("[%d:%d] client set state=%s\n",
+    LOG_DEBUG("[%d:%d] client set state=%s\n",
         client->id, client->request_count, state_to_string(new_state));
 
     client->state = new_state;
@@ -482,7 +487,7 @@ daemon_on_signal(uv_signal_t *signal, int status)
     struct periodic *periodic;
     client_t *client;
 
-    LOG("[srv] received signal %d\n", signal->signum);
+    LOG_NOTICE("[srv] received signal %d\n", signal->signum);
 
     if (daemon->state != DAEMON_RUNNING) {
         return;
@@ -514,7 +519,7 @@ daemon_on_periodic_timer(uv_timer_t *timer, int status)
     struct periodic *periodic = periodic_from_handle_data(
         handle_from_timer(timer));
 
-    LOG("[srv] periodic timer\n");
+    LOG_INFO("[srv] periodic timer\n");
 
     call_periodic_handler_pred(periodic->handler);
 }
@@ -526,20 +531,23 @@ server_on_connect(uv_stream_t *server_handle, int status)
     client_t *client;
     int r;
 
-    LOG("[srv] server_on_connect: status=%d\n", status);
-    if (status != 0)
+    if (status != 0) {
+        LOG_WARN("[srv] server_on_connect: status=%d\n", status);
         return;
+    }
+
+    LOG_DEBUG("[srv] server_on_connect\n");
 
     client = make_client(daemon);
 
     r = uv_accept(server_handle, client_tcp_stream(client));
     if (r != 0) {
-        LOG("[%d:%d] accept failed\n", client->id, client->request_count);
+        LOG_WARN("[%d:%d] accept failed\n", client->id, client->request_count);
         client_close(client, __LINE__);
         return;
     }
 
-    LOG("[%d:%d] new client\n", client->id, client->request_count);
+    LOG_INFO("[%d:%d] new client\n", client->id, client->request_count);
 
     client_resume_read(client, client_on_read_timeout, READ_START_TIMEOUT);
 }
@@ -553,7 +561,7 @@ client_resume_read(client_t *client, uv_timer_cb timeout_cb, int64_t timeout)
         || client->state == READING_REQUEST_HEADER
         || client->state == READING_REQUEST_BODY);
 
-    LOG("[%d:%d] resume read: now=%ld, timeout=%ld\n",
+    LOG_DEBUG("[%d:%d] resume read: now=%ld, timeout=%ld\n",
         client->id, client->request_count, uv_now(loop), timeout);
 
     if (HTTP_PARSER_ERRNO(&client->parser) == HPE_PAUSED) {
@@ -578,7 +586,7 @@ client_resume_read(client_t *client, uv_timer_cb timeout_cb, int64_t timeout)
 static void
 client_pause_read(client_t *client)
 {
-    LOG("[%d:%d] pause read: timer=%p\n",
+    LOG_DEBUG("[%d:%d] pause read: timer=%p\n",
         client->id, client->request_count, &client->timer);
 
     if (HTTP_PARSER_ERRNO(&client->parser) == HPE_OK) {
@@ -602,7 +610,7 @@ client_on_alloc(uv_handle_t *handle, size_t suggested_size)
     suggested_size = 1;
 #endif
 
-    DISABLE LOG("[%d:%d] alloc: %ld bytes\n",
+    LOG_DEBUG("[%d:%d] alloc: %ld bytes\n",
         client->id, client->request_count, suggested_size);
 
     ptr = buffer_reserve(&client->read_buf, suggested_size);
@@ -615,7 +623,7 @@ client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf)
 {
     client_t *client = client_from_stream_data(tcp);
 
-    LOG("[%d:%d] on_read: nread=%d\n",
+    LOG_DEBUG("[%d:%d] on_read: nread=%d\n",
         client->id, client->request_count, nread);
 
     if (nread > 0) {
@@ -626,16 +634,21 @@ client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf)
         uv_timer_start(&client->timer, client_on_read_timeout,
             READ_CONT_TIMEOUT, 0);
 
-        DISABLE LOG("[%d:%d] on_read: deferred read timeout, now=%d\n",
+        LOG_DEBUG("[%d:%d] on_read: deferred read timeout, now=%d\n",
             client->id, client->request_count,
             uv_now(client->timer.loop));
     }
 
     if (nread < 0) {
         uv_err_t err = uv_last_error(client->daemon->loop);
-        LOG("[%d:%d] read error: %s\n",
-            client->id, client->request_count,
-            uv_strerror(err));
+        if (err.code == UV_EOF) {
+            LOG_INFO("[%d:%d] read eof\n",
+                client->id, client->request_count);
+        } else {
+            LOG_NOTICE("[%d:%d] read error: %s\n",
+                client->id, client->request_count,
+                uv_strerror(err));
+        }
         client_close(client, __LINE__);
         return;
     }
@@ -648,7 +661,7 @@ client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf)
         size_t parsed;
         enum http_errno errnum;
 
-        DISABLE LOG("[%d:%d] parser_execute: nread=%d, read_buf.len=%d\n",
+        LOG_DEBUG("[%d:%d] parser_execute: nread=%d, read_buf.len=%d\n",
             client->id, client->request_count,
             nread, client->read_buf.len);
 
@@ -656,14 +669,14 @@ client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf)
             &client->daemon->parser_settings,
             client->read_buf.data, (size_t)client->read_buf.len);
 
-        DISABLE LOG("[%d:%d] parser_execute returned: parsed=%d\n",
+        LOG_DEBUG("[%d:%d] parser_execute returned: parsed=%d\n",
             client->id, client->request_count, parsed);
 
         buffer_shift(&client->read_buf, parsed);
 
         errnum = HTTP_PARSER_ERRNO(&client->parser);
         if (errnum == HPE_PAUSED) {
-            DISABLE LOG("[%d:%d] parser_execute result: parser was paused\n",
+            LOG_DEBUG("[%d:%d] parser_execute result: parser was paused\n",
                 client->id, client->request_count);
             return;
         }
@@ -673,7 +686,7 @@ client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf)
             return;
         }
         if (errnum != HPE_OK) {
-            LOG("[%d:%d] parse error: %s %s\n",
+            LOG_INFO("[%d:%d] parse error: %s %s\n",
                 client->id, client->request_count,
                 http_errno_name(errnum), http_errno_description(errnum));
             client_close(client, __LINE__);
@@ -688,7 +701,7 @@ client_on_read_timeout(uv_timer_t *timer, int status)
     client_t *client = client_from_timer_data(timer);
     uv_loop_t *loop = timer->loop;
 
-    LOG("[%d:%d] on_read_timeout: now=%ld, state=%s\n",
+    LOG_INFO("[%d:%d] on_read_timeout: now=%ld, state=%s\n",
         client->id, client->request_count,
         uv_now(loop), state_to_string(client->state));
 
@@ -708,7 +721,7 @@ client_on_message_begin(http_parser *parser)
     client_t *client = client_from_parser_data(parser);
 
     client->request_count++;
-    LOG("[%d:%d] on_message_begin: state=%s\n",
+    LOG_DEBUG("[%d:%d] on_message_begin: state=%s\n",
         client->id, client->request_count,
         state_to_string(client->state));
 
@@ -742,7 +755,7 @@ client_on_url(http_parser *parser, const char *at, size_t length)
 
     assert(client->state == READING_REQUEST_HEADER);
 
-    DISABLE LOG("[%d:%d] on_url\n",
+    LOG_DEBUG("[%d:%d] on_url\n",
         client->id, client->request_count);
 
     buffer_append(&client->request_acc.request_uri_buf, at, length);
@@ -772,12 +785,13 @@ maybe_done_prev_header(client_t *client, bool force_clear)
             &client->request_acc.header_value_buf, &valid_value);
 
         if (!valid_field || !valid_value) {
-            LOG("[%d:%d] invalid header\n",
+            LOG_INFO("[%d:%d] invalid header\n",
                 client->id, client->request_count);
             client->deferred_error = BAD_REQUEST_400;
             ret = false;
         } else {
-            LOG("[%d:%d] header: '%s: %s'\n",
+            /* Probably lower this to LOG_DEBUG later. */
+            LOG_INFO("[%d:%d] header: '%s: %s'\n",
                 client->id, client->request_count,
                 field, value);
             client->request = request_add_header(client->request, field, value);
@@ -806,7 +820,7 @@ client_on_header_field(http_parser *parser, const char *at, size_t length)
         return -1;
     }
 
-    DISABLE LOG("[%d:%d] on_header_field\n",
+    LOG_DEBUG("[%d:%d] on_header_field\n",
         client->id, client->request_count);
 
     buffer_append(&client->request_acc.header_field_buf, at, length);
@@ -822,7 +836,7 @@ client_on_header_value(http_parser *parser, const char *at, size_t length)
 
     assert(client->state == READING_REQUEST_HEADER);
 
-    DISABLE LOG("[%d:%d] on_header_value\n",
+    LOG_DEBUG("[%d:%d] on_header_value\n",
         client->id, client->request_count);
 
     buffer_append(&client->request_acc.header_value_buf, at, length);
@@ -862,7 +876,7 @@ client_on_headers_complete(http_parser *parser)
         return -1;
     }
 
-    LOG("[%d:%d] on_headers_complete: method='%s', request-uri='%s'\n",
+    LOG_INFO("[%d:%d] on_headers_complete: method='%s', request-uri='%s'\n",
         client->id, client->request_count,
         method, request_uri);
 
@@ -870,7 +884,7 @@ client_on_headers_complete(http_parser *parser)
         client->parser.content_length != ULLONG_MAX &&
         client->parser.content_length > daemon->max_body)
     {
-        LOG("[%d:%d] content_length=%ld too big\n",
+        LOG_INFO("[%d:%d] content_length=%ld too big\n",
             client->id, client->request_count,
             client->parser.content_length);
         client_write_fatal_413_request_entity_too_large(client);
@@ -881,7 +895,7 @@ client_on_headers_complete(http_parser *parser)
     if (request_prepare(method, request_uri, enforce_host_header,
             client->request, &client->request) == MR_FALSE)
     {
-        LOG("[%d:%d] request_prepare failed\n",
+        LOG_NOTICE("[%d:%d] request_prepare failed\n",
             client->id, client->request_count);
         client->deferred_error = BAD_REQUEST_400;
     }
@@ -920,7 +934,7 @@ client_maybe_write_continue_status_line(client_t *client, bool really)
     client_set_state(client, WRITING_CONTINUE_STATUS_LINE);
 
     if (really) {
-        LOG("[%d:%d] writing 100 Continue\n",
+        LOG_DEBUG("[%d:%d] writing 100 Continue\n",
             client->id, client->request_count);
         bufs[0] = uv_buf_init(text, sizeof(text) - 1);
     } else {
@@ -936,7 +950,7 @@ client_after_write_continue_status_line(uv_write_t *req, int status)
 {
     client_t *client = client_from_stream_data(req->handle);
 
-    LOG("[%d:%d] after write_continue_status_line: status=%d\n",
+    LOG_DEBUG("[%d:%d] after write_continue_status_line: status=%d\n",
         client->id, client->request_count, status);
 
     assert(client->state == WRITING_CONTINUE_STATUS_LINE);
@@ -960,7 +974,7 @@ client_maybe_start_formdata_parser(client_t *client)
     succeeded = request_search_multipart_formdata_boundary(client->request,
         &boundary);
     if (succeeded) {
-        LOG("[%d:%d] multipart/form-data parser: boundary='%s'\n",
+        LOG_DEBUG("[%d:%d] multipart/form-data parser: boundary='%s'\n",
             client->id, client->request_count, boundary);
         client->request_acc.multipart_parser =
             create_formdata_parser(boundary);
@@ -974,16 +988,18 @@ client_on_body(http_parser *parser, const char *at, size_t length)
     daemon_t *daemon = client->daemon;
 
     if (client->request_acc.body_total == 0) {
-        LOG("[%d:%d] on_body first: %d bytes\n",
+        LOG_DEBUG("[%d:%d] on_body first: %d bytes\n",
             client->id, client->request_count, length);
     } else {
-        DISABLE LOG("[%d:%d] on_body subseq: %d bytes\n",
+        LOG_DEBUG("[%d:%d] on_body subseq: %d bytes\n",
             client->id, client->request_count, length);
     }
 
     assert(client->state == READING_REQUEST_BODY);
 
     if (client->deferred_error != NO_ERROR_YET) {
+        LOG_INFO("[%d:%d] on_body deferred_error=%d\n",
+            client->id, client->request_count, client->deferred_error);
         return 0;
     }
 
@@ -1015,11 +1031,11 @@ client_on_body(http_parser *parser, const char *at, size_t length)
 
         buffer_shift(&client->request_acc.body_buf, parsed);
 
-        DISABLE LOG("[%d:%d] parse_formdata: parsed=%ld\n",
+        LOG_DEBUG("[%d:%d] parse_formdata: parsed=%ld\n",
             client->id, client->request_count, parsed);
 
         if (is_error) {
-            LOG("[%d:%d] parse_formdata error: %s\n",
+            LOG_NOTICE("[%d:%d] parse_formdata error: %s\n",
                 client->id, client->request_count, error_string);
             client_pause_read(client);
             client_write_fatal_400_bad_request(client);
@@ -1041,7 +1057,7 @@ client_on_message_complete(http_parser *parser)
 
     client_pause_read(client);
 
-    LOG("[%d:%d] on_message_complete: state=%s, deferred_error=%d\n",
+    LOG_DEBUG("[%d:%d] on_message_complete: state=%s, deferred_error=%d\n",
         client->id, client->request_count,
         state_to_string(client->state), client->deferred_error);
 
@@ -1069,7 +1085,7 @@ client_on_message_complete(http_parser *parser)
     }
 
     /* Call the request handler. */
-    LOG("[%d:%d] on_message_complete: call request handler\n",
+    LOG_DEBUG("[%d:%d] on_message_complete: call request handler\n",
         client->id, client->request_count);
 
     client_set_state(client, PREPARING_RESPONSE);
@@ -1087,7 +1103,7 @@ client_write_400_bad_request(client_t *client)
         "Content-Length: 0\r\n"
         "\r\n";
 
-    client_write_error_response(client, WRITING_RESPONSE,
+    client_write_error_response(client, 400, WRITING_RESPONSE,
         text, sizeof(text) - 1);
 }
 
@@ -1099,7 +1115,7 @@ client_write_417_expectation_failed(client_t *client)
         "Content-Length: 0\r\n"
         "\r\n";
 
-    client_write_error_response(client, WRITING_RESPONSE,
+    client_write_error_response(client, 417, WRITING_RESPONSE,
         text, sizeof(text) - 1);
 }
 
@@ -1115,7 +1131,7 @@ client_write_fatal_400_bad_request(client_t *client)
     ** This error is fatal as we don't want to read any of the body
     ** after sending the error response.
     */
-    client_write_error_response(client, WRITING_FATAL_RESPONSE,
+    client_write_error_response(client, 400, WRITING_FATAL_RESPONSE,
         text, sizeof(text) - 1);
 }
 
@@ -1131,7 +1147,7 @@ client_write_fatal_413_request_entity_too_large(client_t *client)
     ** This error is fatal as we don't want to read any of the body
     ** after sending the error response.
     */
-    client_write_error_response(client, WRITING_FATAL_RESPONSE,
+    client_write_error_response(client, 413, WRITING_FATAL_RESPONSE,
         text, sizeof(text) - 1);
 }
 
@@ -1147,19 +1163,20 @@ client_write_fatal_431_request_header_fields_too_large(client_t *client)
     ** This error is fatal as we don't want to read any of the header or body
     ** after sending the error response.
     */
-    client_write_error_response(client, WRITING_FATAL_RESPONSE,
+    client_write_error_response(client, 431, WRITING_FATAL_RESPONSE,
         text, sizeof(text) - 1);
 }
 
 static void
-client_write_error_response(client_t *client, enum client_state new_state,
-    const char *response, size_t responselen)
+client_write_error_response(client_t *client, int status_code,
+    enum client_state new_state, const char *response, size_t responselen)
 {
     const int nbufs = 1;
     uv_buf_t bufs[nbufs];
 
-    LOG("[%d:%d] write error response\n",
-        client->id, client->request_count);
+    LOG_INFO("[%d:%d] write error response: status_code=%d, new_state=%s\n",
+        client->id, client->request_count, status_code,
+        state_to_string(new_state));
 
     client_set_state(client, new_state);
 
@@ -1175,7 +1192,7 @@ client_set_request_body(client_t *client)
 {
     MR_bool valid;
 
-    LOG("[%d:%d] set_request_body\n",
+    LOG_DEBUG("[%d:%d] set_request_body\n",
         client->id, client->request_count);
 
     if (client->request_acc.multipart_parser != 0) {
@@ -1204,7 +1221,7 @@ client_on_async(uv_async_t *async, int status)
     client_t *client = client_from_async_data(async);
     uv_loop_t *loop = client->daemon->loop;
 
-    LOG("[%d:%d] on_async: status=%d, state=%s\n",
+    LOG_DEBUG("[%d:%d] on_async: status=%d, state=%s\n",
         client->id, client->request_count, status,
         state_to_string(client->state));
 
@@ -1213,7 +1230,7 @@ client_on_async(uv_async_t *async, int status)
     ** ignore the second and subsequent invocations.
     */
     if (client->state != PREPARING_RESPONSE) {
-        LOG("[%d:%d] on_async: ignored\n",
+        LOG_INFO("[%d:%d] on_async: ignored\n",
             client->id, client->request_count);
         return;
     }
@@ -1239,7 +1256,7 @@ client_on_write_timeout(uv_timer_t *timer, int status)
 {
     client_t *client = client_from_timer_data(timer);
 
-    LOG("[%d:%d] on_write_timeout: state=%s\n",
+    LOG_NOTICE("[%d:%d] on_write_timeout: state=%s\n",
         client->id, client->request_count,
         state_to_string(client->state));
 
@@ -1260,7 +1277,7 @@ client_after_write_response_bufs(uv_write_t *req, int status)
 
     uv_timer_stop(&client->timer);
 
-    LOG("[%d:%d] after_write_response_bufs: status=%d\n",
+    LOG_DEBUG("[%d:%d] after_write_response_bufs: status=%d\n",
         client->id, client->request_count, status);
 
     if (client->state == CLOSING) {
@@ -1291,7 +1308,7 @@ client_start_response_file(client_t *client)
     uv_loop_t *loop = client->daemon->loop;
     int r;
 
-    LOG("[%d:%d] start_response_file: fd=%d\n",
+    LOG_DEBUG("[%d:%d] start_response_file: fd=%d\n",
         client->id, client->request_count, client->response_file);
 
     assert(client->state == WRITING_RESPONSE);
@@ -1327,7 +1344,7 @@ client_on_read_response_file_buf(uv_fs_t *req)
     nread = req->result;
     uv_fs_req_cleanup(req);
 
-    DISABLE LOG("[%d:%d] on_read_response_file_buf: nread=%d, state=%s\n",
+    LOG_DEBUG("[%d:%d] on_read_response_file_buf: nread=%d, state=%s\n",
         client->id, client->request_count, nread,
         state_to_string(client->state));
 
@@ -1348,7 +1365,7 @@ client_on_read_response_file_buf(uv_fs_t *req)
         return;
     }
 
-    DISABLE LOG("[%d:%d] write response file buffer\n",
+    LOG_DEBUG("[%d:%d] write response file buffer\n",
         client->id, client->request_count, client->response_file);
 
     /* Renew timeout. */
@@ -1366,7 +1383,7 @@ client_after_write_response_file_buf(uv_write_t *req, int status)
     client_t *client = client_from_stream_data(req->handle);
     int r;
 
-    DISABLE LOG("[%d:%d] after_write_response_file_buf: status=%d, state=%s\n",
+    LOG_DEBUG("[%d:%d] after_write_response_file_buf: status=%d, state=%s\n",
         client->id, client->request_count, status,
         state_to_string(client->state));
 
@@ -1400,7 +1417,7 @@ client_after_write_response_file_buf(uv_write_t *req, int status)
 static void
 client_after_response_file(client_t *client, int status)
 {
-    LOG("[%d:%d] after_response_file: status=%d, state=%s\n",
+    LOG_DEBUG("[%d:%d] after_response_file: status=%d, state=%s\n",
         client->id, client->request_count, status,
         state_to_string(client->state));
 
@@ -1419,7 +1436,7 @@ client_close_response_file(client_t *client)
     if (client->response_file < 0)
         return;
 
-    LOG("[%d:%d] close_response_file: fd=%d\n",
+    LOG_DEBUG("[%d:%d] close_response_file: fd=%d\n",
         client->id, client->request_count, client->response_file);
 
     /* Synchronous close (because of null callback). */
@@ -1432,7 +1449,7 @@ client_close_response_file(client_t *client)
 static void
 client_after_full_response(client_t *client, int status)
 {
-    LOG("[%d:%d] after_full_response: status=%d, state=%s\n",
+    LOG_DEBUG("[%d:%d] after_full_response: status=%d, state=%s\n",
         client->id, client->request_count, status,
         state_to_string(client->state));
 
@@ -1454,7 +1471,7 @@ client_after_full_response(client_t *client, int status)
         return;
     }
 
-    LOG("[%d:%d] persisting connection\n",
+    LOG_INFO("[%d:%d] persisting connection\n",
         client->id, client->request_count);
 
     if (client->read_buf.len == 0) {
@@ -1472,7 +1489,7 @@ client_on_keepalive_timeout(uv_timer_t *timer, int status)
     client_t *client = client_from_timer_data(timer);
     uv_loop_t *loop = timer->loop;
 
-    LOG("[%d:%d] on_keepalive_timeout: now=%ld, state=%s\n",
+    LOG_INFO("[%d:%d] on_keepalive_timeout: now=%ld, state=%s\n",
         client->id, client->request_count, uv_now(loop),
         state_to_string(client->state));
 
@@ -1484,7 +1501,7 @@ client_on_keepalive_timeout(uv_timer_t *timer, int status)
 static void
 client_close(client_t *client, int line)
 {
-    LOG("[%d:%d] close: caller=%s:%d, state=%s\n",
+    LOG_INFO("[%d:%d] close by %s:%d: state=%s\n",
         client->id, client->request_count,
         __FILE__, line, state_to_string(client->state));
 
@@ -1503,7 +1520,7 @@ client_on_close_1(uv_handle_t *handle)
     client_t *client = client_from_handle_data(handle);
     uv_timer_t *timer = timer_from_handle_checked(handle);
 
-    LOG("[%d:%d] on_close_1\n",
+    LOG_DEBUG("[%d:%d] on_close_1\n",
         client->id, client->request_count);
 
     /*
@@ -1520,7 +1537,7 @@ client_on_close_2(uv_handle_t *handle)
 {
     client_t *client = client_from_handle_data(handle);
 
-    LOG("[%d:%d] on_close_2\n", client->id, client->request_count);
+    LOG_DEBUG("[%d:%d] on_close_2\n", client->id, client->request_count);
 
     uv_close(handle_from_stream(client_tcp_stream(client)), client_on_close_3);
 }
@@ -1531,7 +1548,7 @@ client_on_close_3(uv_handle_t *handle)
     client_t *client = client_from_handle_data(handle);
     uv_loop_t *loop = client->daemon->loop;
 
-    LOG("[%d:%d] on_close_3\n", client->id, client->request_count);
+    LOG_DEBUG("[%d:%d] on_close_3\n", client->id, client->request_count);
 
     assert(!uv_is_active(handle_from_async(&client->async)));
 
@@ -1609,7 +1626,7 @@ _httpsrv_set_response_bufs(client_t *client,
     MR_Integer i;
     MR_String s;
 
-    LOG("[%d:%d] set_response: response_list_length=%d\n",
+    LOG_DEBUG("[%d:%d] set_response: response_list_length=%d\n",
         client->id, client->request_count,
         response_list_length);
 

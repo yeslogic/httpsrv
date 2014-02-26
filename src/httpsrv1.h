@@ -186,8 +186,8 @@ static void
 client_write_fatal_431_request_header_fields_too_large(client_t *client);
 
 static void
-client_write_error_response(client_t *client, enum client_state new_state,
-    const char *response, size_t responselen);
+client_write_error_response(client_t *client, int status_code,
+    enum client_state new_state, const char *response, size_t responselen);
 
 static bool
 client_set_request_body(client_t *client);
