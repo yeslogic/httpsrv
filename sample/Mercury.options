@@ -3,7 +3,7 @@ GRADE = hlc.par.gc
 MCFLAGS += --grade $(GRADE)
 
 HTTPSRV_DIR = ..
-include httpsrv.options
+include $(HTTPSRV_DIR)/src/httpsrv.options
 
 MLOBJS-httpsrv_test = $(HTTPSRV_OBJS)
 

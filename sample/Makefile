@@ -1,9 +1,9 @@
 # Mercury
 MMC := mmc
 
-# Allow build in a directory parallel to src.
 srcdir := ../src
-srcs := $(srcdir)/*.m
+srcs := *.m \
+	$(srcdir)/*.m
 m_files := $(wildcard $(srcs))
 
 PROGS = httpsrv_test
