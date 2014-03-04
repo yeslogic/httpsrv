@@ -1190,12 +1190,12 @@ client_write_error_response(client_t *client, int status_code,
 static bool
 client_set_request_body(client_t *client)
 {
-    MR_bool valid;
-
     LOG_DEBUG("[%d:%d] set_request_body\n",
         client->id, client->request_count);
 
     if (client->request_acc.multipart_parser != 0) {
+        MR_Word valid;
+
         request_set_body_formdata(client->request_acc.multipart_parser,
             client->request, &client->request, &valid);
         if (!valid) {
@@ -1203,6 +1203,7 @@ client_set_request_body(client_t *client)
         }
     } else {
         MR_String body;
+        MR_bool valid;
 
         /* Perhaps we need to support other charsets here. */
         body = buffer_to_string_utf8(&client->request_acc.body_buf, &valid);
