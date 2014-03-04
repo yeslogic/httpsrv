@@ -6,6 +6,7 @@ HTTPSRV_DIR = ..
 include $(HTTPSRV_DIR)/src/httpsrv.options
 
 MLOBJS-httpsrv_test = $(HTTPSRV_OBJS)
+MLLIBS-httpsrv_test += -lrt
 
 -include Mercury.params
 
