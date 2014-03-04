@@ -431,4 +431,9 @@ parse_url(String, Url) :-
     parse_url.parse_url(String, Url).
 
 %-----------------------------------------------------------------------------%
+
+% Workaround to force rebuild when C files are touched:
+% 7808c17
+
+%-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
