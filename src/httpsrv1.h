@@ -96,6 +96,13 @@ struct client {
     uv_fs_t response_file_req;
     buffer_t response_file_buf;
     uv_write_t write_req;
+
+    /* for logging; times in msecs from uv_now */
+    uint64_t time_connect;
+    uint64_t time_message_begin;
+    uint64_t time_request_handler_start;
+    uint64_t time_request_handler_end;
+    uint64_t time_request_sent;
 };
 
 static daemon_t *
@@ -218,6 +225,9 @@ client_close_response_file(client_t *client);
 
 static void
 client_after_full_response(client_t *client, int status);
+
+static void
+client_log_times(client_t *client);
 
 static void
 client_on_keepalive_timeout(uv_timer_t *timer, int status);

@@ -404,6 +404,12 @@ make_client(daemon_t *dmn)
     client->response_file_size = 0;
     buffer_init(&client->response_file_buf);
 
+    client->time_connect = 0;
+    client->time_message_begin = 0;
+    client->time_request_handler_start = 0;
+    client->time_request_handler_end = 0;
+    client->time_request_sent = 0;
+
     return client;
 }
 
@@ -539,6 +545,7 @@ server_on_connect(uv_stream_t *server_handle, int status)
     LOG_DEBUG("[srv] server_on_connect\n");
 
     client = make_client(dmn);
+    client->time_connect = uv_now(dmn->loop);
 
     r = uv_accept(server_handle, client_tcp_stream(client));
     if (r != 0) {
@@ -719,8 +726,10 @@ static int
 client_on_message_begin(http_parser *parser)
 {
     client_t *client = client_from_parser_data(parser);
+    uv_loop_t *loop = client->daemon->loop;
 
     client->request_count++;
+    client->time_message_begin = uv_now(loop);
     LOG_DEBUG("[%d:%d] on_message_begin: state=%s\n",
         client->id, client->request_count,
         state_to_string(client->state));
@@ -1050,6 +1059,7 @@ static int
 client_on_message_complete(http_parser *parser)
 {
     client_t *client = client_from_parser_data(parser);
+    uv_loop_t *loop = client->daemon->loop;
     MR_String method;
     bool valid;
 
@@ -1089,6 +1099,7 @@ client_on_message_complete(http_parser *parser)
         client->id, client->request_count);
 
     client_set_state(client, PREPARING_RESPONSE);
+    client->time_request_handler_start = uv_now(loop);
     call_request_handler_pred(client->daemon->request_handler,
         client->request);
 
@@ -1235,6 +1246,8 @@ client_on_async(uv_async_t *async, int status)
             client->id, client->request_count);
         return;
     }
+
+    client->time_request_handler_end = uv_now(loop);
 
     /* We hold onto response_bufs while writing to prevent collection. */
     assert(client->response_bufs != NULL);
@@ -1450,9 +1463,13 @@ client_close_response_file(client_t *client)
 static void
 client_after_full_response(client_t *client, int status)
 {
+    client->time_request_sent = uv_now(client->daemon->loop);
+
     LOG_DEBUG("[%d:%d] after_full_response: status=%d, state=%s\n",
         client->id, client->request_count, status,
         state_to_string(client->state));
+
+    client_log_times(client);
 
     if (client->state == CLOSING) {
         /* Write timed out. */
@@ -1481,6 +1498,35 @@ client_after_full_response(client_t *client, int status)
     } else {
         /* Already had part of the next request in the read_buf. */
         client_resume_read(client, client_on_read_timeout, READ_START_TIMEOUT);
+    }
+}
+
+static void
+client_log_times(client_t *client)
+{
+    uint64_t t_connect = client->time_connect;
+    uint64_t message_begin = client->time_message_begin;
+    uint64_t request_handler_start = client->time_request_handler_start;
+    uint64_t request_handler_end = client->time_request_handler_end;
+    uint64_t request_sent = client->time_request_sent;
+
+    if (client->request_count == 1) {
+        LOG_INFO("[%d:%d] time deltas (ms): "
+            "begin=%d, read=%d, handler=%d, write=%d, overall=%d\n",
+            client->id, client->request_count,
+            (int)(message_begin - t_connect),
+            (int)(request_handler_start - message_begin),
+            (int)(request_handler_end - request_handler_start),
+            (int)(request_sent - request_handler_end),
+            (int)(request_sent - t_connect));
+    } else {
+        LOG_INFO("[%d:%d] time deltas (ms): "
+            "persist, read=%d, handler=%d, write=%d, overall=%d\n",
+            client->id, client->request_count,
+            (int)(request_handler_start - message_begin),
+            (int)(request_handler_end - request_handler_start),
+            (int)(request_sent - request_handler_end),
+            (int)(request_sent - message_begin));
     }
 }
 
