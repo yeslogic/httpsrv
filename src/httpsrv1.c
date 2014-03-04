@@ -118,25 +118,25 @@ timer_from_handle_checked(uv_handle_t *handle)
 static daemon_t *
 daemon_from_handle_data(uv_handle_t *x)
 {
-    daemon_t *daemon = x->data;
-    assert(daemon && daemon->magic == DAEMON_MAGIC);
-    return daemon;
+    daemon_t *dmn = x->data;
+    assert(dmn && dmn->magic == DAEMON_MAGIC);
+    return dmn;
 }
 
 static daemon_t *
 daemon_from_stream_data(uv_stream_t *x)
 {
-    daemon_t *daemon = x->data;
-    assert(daemon && daemon->magic == DAEMON_MAGIC);
-    return daemon;
+    daemon_t *dmn = x->data;
+    assert(dmn && dmn->magic == DAEMON_MAGIC);
+    return dmn;
 }
 
 static daemon_t *
 daemon_from_signal_data(uv_signal_t *x)
 {
-    daemon_t *daemon = x->data;
-    assert(daemon && daemon->magic == DAEMON_MAGIC);
-    return daemon;
+    daemon_t *dmn = x->data;
+    assert(dmn && dmn->magic == DAEMON_MAGIC);
+    return dmn;
 }
 
 static uv_stream_t *
@@ -224,129 +224,129 @@ daemon_setup(MR_Word request_handler,
     MR_Integer max_body,
     MR_String *error_message)
 {
-    daemon_t *daemon;
+    daemon_t *dmn;
     int r;
 
-    daemon = MR_GC_NEW(daemon_t);
-    memset(daemon, 0, sizeof(daemon_t));
+    dmn = MR_GC_NEW(daemon_t);
+    memset(dmn, 0, sizeof(daemon_t));
 
-    daemon->magic = DAEMON_MAGIC;
-    daemon->state = DAEMON_STARTING;
-    daemon->loop = uv_loop_new();
+    dmn->magic = DAEMON_MAGIC;
+    dmn->state = DAEMON_STARTING;
+    dmn->loop = uv_loop_new();
 
-    daemon->signal1.data = daemon; /* for daemon_cleanup */
-    daemon->signal2.data = daemon; /* for daemon_cleanup */
-    daemon->server.data = daemon; /* for daemon_cleanup */
+    dmn->signal1.data = dmn; /* for daemon_cleanup */
+    dmn->signal2.data = dmn; /* for daemon_cleanup */
+    dmn->server.data = dmn; /* for daemon_cleanup */
 
-    uv_signal_init(daemon->loop, &daemon->signal1);
-    uv_signal_init(daemon->loop, &daemon->signal2);
-    uv_signal_start(&daemon->signal1, daemon_on_signal, SIGINT);
-    uv_signal_start(&daemon->signal2, daemon_on_signal, SIGTERM);
+    uv_signal_init(dmn->loop, &dmn->signal1);
+    uv_signal_init(dmn->loop, &dmn->signal2);
+    uv_signal_start(&dmn->signal1, daemon_on_signal, SIGINT);
+    uv_signal_start(&dmn->signal2, daemon_on_signal, SIGTERM);
 
-    r = uv_tcp_init(daemon->loop, &daemon->server);
+    r = uv_tcp_init(dmn->loop, &dmn->server);
     if (r != 0) {
         *error_message = MR_make_string(MR_ALLOC_SITE_NONE,
-            "%s", uv_strerror(uv_last_error(daemon->loop)));
+            "%s", uv_strerror(uv_last_error(dmn->loop)));
         LOG_ERROR("[srv] tcp init error=%d (%s)\n", r, *error_message);
-        daemon_cleanup(daemon);
+        daemon_cleanup(dmn);
         return NULL;
     }
 
-    r = uv_tcp_bind(&daemon->server, uv_ip4_addr(bind_address, port));
+    r = uv_tcp_bind(&dmn->server, uv_ip4_addr(bind_address, port));
     if (r != 0) {
         *error_message = MR_make_string(MR_ALLOC_SITE_NONE,
-            "%s", uv_strerror(uv_last_error(daemon->loop)));
+            "%s", uv_strerror(uv_last_error(dmn->loop)));
         LOG_ERROR("[srv] tcp bind error=%d (%s)\n", r, *error_message);
-        daemon_cleanup(daemon);
+        daemon_cleanup(dmn);
         return NULL;
     }
 
-    daemon->parser_settings.on_message_begin = client_on_message_begin;
-    daemon->parser_settings.on_url = client_on_url;
-    daemon->parser_settings.on_header_field = client_on_header_field;
-    daemon->parser_settings.on_header_value = client_on_header_value;
-    daemon->parser_settings.on_headers_complete = client_on_headers_complete;
-    daemon->parser_settings.on_body = client_on_body;
-    daemon->parser_settings.on_message_complete = client_on_message_complete;
-    daemon->max_body = max_body;
-    daemon->request_handler = request_handler;
-    daemon->periodics = NULL;
-    daemon->clients = NULL;
-    daemon->next_client_id = 1;
+    dmn->parser_settings.on_message_begin = client_on_message_begin;
+    dmn->parser_settings.on_url = client_on_url;
+    dmn->parser_settings.on_header_field = client_on_header_field;
+    dmn->parser_settings.on_header_value = client_on_header_value;
+    dmn->parser_settings.on_headers_complete = client_on_headers_complete;
+    dmn->parser_settings.on_body = client_on_body;
+    dmn->parser_settings.on_message_complete = client_on_message_complete;
+    dmn->max_body = max_body;
+    dmn->request_handler = request_handler;
+    dmn->periodics = NULL;
+    dmn->clients = NULL;
+    dmn->next_client_id = 1;
 
-    r = uv_listen(stream_from_tcp(&daemon->server), back_log,
+    r = uv_listen(stream_from_tcp(&dmn->server), back_log,
         server_on_connect);
     if (r != 0) {
         *error_message = MR_make_string(MR_ALLOC_SITE_NONE,
-            "%s", uv_strerror(uv_last_error(daemon->loop)));
+            "%s", uv_strerror(uv_last_error(dmn->loop)));
         LOG_ERROR("[srv] listen error=%d (%s)\n", r, *error_message);
-        daemon_cleanup(daemon);
+        daemon_cleanup(dmn);
         return NULL;
     }
 
-    daemon->state = DAEMON_RUNNING;
+    dmn->state = DAEMON_RUNNING;
 
     *error_message = MR_make_string_const("");
-    return daemon;
+    return dmn;
 }
 
 static void
-daemon_cleanup(daemon_t *daemon)
+daemon_cleanup(daemon_t *dmn)
 {
     LOG_INFO("[srv] cleanup\n");
 
-    uv_close(handle_from_signal(&daemon->signal1), NULL);
-    uv_close(handle_from_signal(&daemon->signal2), NULL);
-    if (daemon->state != DAEMON_STOPPING) {
-        uv_close(handle_from_tcp(&daemon->server), NULL);
+    uv_close(handle_from_signal(&dmn->signal1), NULL);
+    uv_close(handle_from_signal(&dmn->signal2), NULL);
+    if (dmn->state != DAEMON_STOPPING) {
+        uv_close(handle_from_tcp(&dmn->server), NULL);
     }
 
-    daemon_cleanup_periodics(daemon);
+    daemon_cleanup_periodics(dmn);
 
-    uv_run(daemon->loop, UV_RUN_DEFAULT);
+    uv_run(dmn->loop, UV_RUN_DEFAULT);
 
-    assert(daemon->clients == NULL);
+    assert(dmn->clients == NULL);
 
-    /* uv_print_all_handles(daemon->loop); */
+    /* uv_print_all_handles(dmn->loop); */
 
-    uv_loop_delete(daemon->loop);
+    uv_loop_delete(dmn->loop);
 
-    MR_GC_free(daemon);
+    MR_GC_free(dmn);
 }
 
 static void
-daemon_add_periodic(daemon_t *daemon, MR_Integer milliseconds,
+daemon_add_periodic(daemon_t *dmn, MR_Integer milliseconds,
     MR_Word periodic_handler)
 {
     struct periodic *periodic;
 
     periodic = MR_GC_NEW(struct periodic);
     periodic->magic = PERIODIC_MAGIC;
-    uv_timer_init(daemon->loop, &periodic->timer);
+    uv_timer_init(dmn->loop, &periodic->timer);
     periodic->timer.data = periodic;
     periodic->handler = periodic_handler;
-    periodic->next = daemon->periodics;
-    daemon->periodics = periodic;
+    periodic->next = dmn->periodics;
+    dmn->periodics = periodic;
 
-    uv_update_time(daemon->loop);
+    uv_update_time(dmn->loop);
     uv_timer_start(&periodic->timer, daemon_on_periodic_timer,
         milliseconds, milliseconds);
 
     LOG_INFO("[srv] add periodic: now=%ld, milliseconds=%ld\n",
-        uv_now(daemon->loop), milliseconds);
+        uv_now(dmn->loop), milliseconds);
 }
 
 static void
-daemon_cleanup_periodics(daemon_t *daemon)
+daemon_cleanup_periodics(daemon_t *dmn)
 {
     struct periodic *periodic;
 
-    while ((periodic = daemon->periodics)) {
+    while ((periodic = dmn->periodics)) {
         uv_close(handle_from_timer(&periodic->timer), NULL);
-        daemon->periodics = periodic->next;
+        dmn->periodics = periodic->next;
     }
 
-    assert(daemon->periodics == NULL);
+    assert(dmn->periodics == NULL);
 }
 
 /*
@@ -354,9 +354,9 @@ daemon_cleanup_periodics(daemon_t *daemon)
 */
 
 static client_t *
-make_client(daemon_t *daemon)
+make_client(daemon_t *dmn)
 {
-    uv_loop_t *loop = daemon->loop;
+    uv_loop_t *loop = dmn->loop;
     client_t *client;
 
     /*
@@ -367,12 +367,12 @@ make_client(daemon_t *daemon)
     memset(client, 0, sizeof(client_t));
 
     client->magic = CLIENT_MAGIC;
-    client->id = daemon->next_client_id++;
+    client->id = dmn->next_client_id++;
     client->request_count = 0;
-    client->daemon = daemon;
+    client->daemon = dmn;
     /* link */
-    client->next = daemon->clients;
-    daemon->clients = client;
+    client->next = dmn->clients;
+    dmn->clients = client;
 
     client->state = IDLE;
     client->deferred_error = NO_ERROR_YET;
@@ -481,32 +481,32 @@ client_set_state(client_t *client, enum client_state new_state)
 */
 
 static void
-daemon_on_signal(uv_signal_t *signal, int status)
+daemon_on_signal(uv_signal_t *sig, int status)
 {
-    daemon_t *daemon = daemon_from_signal_data(signal);
+    daemon_t *dmn = daemon_from_signal_data(sig);
     struct periodic *periodic;
     client_t *client;
 
-    LOG_NOTICE("[srv] received signal %d\n", signal->signum);
+    LOG_NOTICE("[srv] received signal %d\n", sig->signum);
 
-    if (daemon->state != DAEMON_RUNNING) {
+    if (dmn->state != DAEMON_RUNNING) {
         return;
     }
 
-    daemon->state = DAEMON_STOPPING;
-    uv_close(handle_from_tcp(&daemon->server), NULL);
+    dmn->state = DAEMON_STOPPING;
+    uv_close(handle_from_tcp(&dmn->server), NULL);
 
     /* Unref signal handles so they do not prevent the loop finishing. */
-    uv_unref(handle_from_signal(&daemon->signal1));
-    uv_unref(handle_from_signal(&daemon->signal2));
+    uv_unref(handle_from_signal(&dmn->signal1));
+    uv_unref(handle_from_signal(&dmn->signal2));
 
     /* Stop periodic timers immediately. */
-    for (periodic = daemon->periodics; periodic; periodic = periodic->next) {
+    for (periodic = dmn->periodics; periodic; periodic = periodic->next) {
         uv_timer_stop(&periodic->timer);
     }
 
     /* Close idle clients immediately. */
-    for (client = daemon->clients; client; client = client->next) {
+    for (client = dmn->clients; client; client = client->next) {
         if (client->state == IDLE) {
             client_close(client, __LINE__);
         }
@@ -527,7 +527,7 @@ daemon_on_periodic_timer(uv_timer_t *timer, int status)
 static void
 server_on_connect(uv_stream_t *server_handle, int status)
 {
-    daemon_t *daemon = daemon_from_stream_data(server_handle);
+    daemon_t *dmn = daemon_from_stream_data(server_handle);
     client_t *client;
     int r;
 
@@ -538,7 +538,7 @@ server_on_connect(uv_stream_t *server_handle, int status)
 
     LOG_DEBUG("[srv] server_on_connect\n");
 
-    client = make_client(daemon);
+    client = make_client(dmn);
 
     r = uv_accept(server_handle, client_tcp_stream(client));
     if (r != 0) {
@@ -849,7 +849,7 @@ static int
 client_on_headers_complete(http_parser *parser)
 {
     client_t *client = client_from_parser_data(parser);
-    daemon_t *daemon = client->daemon;
+    daemon_t *dmn = client->daemon;
     MR_String method;
     MR_String request_uri;
     MR_bool enforce_host_header;
@@ -882,7 +882,7 @@ client_on_headers_complete(http_parser *parser)
 
     if (!(client->parser.flags & F_CHUNKED) &&
         client->parser.content_length != ULLONG_MAX &&
-        client->parser.content_length > daemon->max_body)
+        client->parser.content_length > dmn->max_body)
     {
         LOG_INFO("[%d:%d] content_length=%ld too big\n",
             client->id, client->request_count,
@@ -985,7 +985,7 @@ static int
 client_on_body(http_parser *parser, const char *at, size_t length)
 {
     client_t *client = client_from_parser_data(parser);
-    daemon_t *daemon = client->daemon;
+    daemon_t *dmn = client->daemon;
 
     if (client->request_acc.body_total == 0) {
         LOG_DEBUG("[%d:%d] on_body first: %d bytes\n",
@@ -1009,7 +1009,7 @@ client_on_body(http_parser *parser, const char *at, size_t length)
     ** The multipart parser regularly drains body_buf so
     ** we need a separate counter for total length.
     */
-    if (client->request_acc.body_total + length > daemon->max_body) {
+    if (client->request_acc.body_total + length > dmn->max_body) {
         client_pause_read(client);
         client_write_fatal_413_request_entity_too_large(client);
         return 0;
@@ -1562,16 +1562,16 @@ client_on_close_3(uv_handle_t *handle)
 static void
 client_unlink(client_t *client)
 {
-    daemon_t *daemon = client->daemon;
+    daemon_t *dmn = client->daemon;
     client_t *prev;
     client_t *cur;
 
     prev = NULL;
-    cur = daemon->clients;
+    cur = dmn->clients;
     while (cur != NULL) {
         if (cur == client) {
             if (prev == NULL) {
-                daemon->clients = cur->next;
+                dmn->clients = cur->next;
             } else {
                 prev->next = cur->next;
             }
