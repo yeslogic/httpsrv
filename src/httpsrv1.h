@@ -252,8 +252,8 @@ client_address_ipv4(client_t *client, MR_AllocSiteInfoPtr alloc_id);
 
 void
 _httpsrv_set_response_bufs(client_t *client,
-    MR_Word response_list, MR_Integer response_list_length,
-    MR_Integer response_file_fd, MR_Integer response_file_size);
+    uv_buf_t *response_bufs, MR_Integer response_bufs_length,
+    MR_Integer response_file, MR_Integer response_file_size);
 
 void
 _httpsrv_send_async(client_t *client);

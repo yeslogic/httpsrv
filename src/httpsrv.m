@@ -167,7 +167,11 @@
 
 :- type response_content
     --->    strings(list(string))
+    ;       slices(list(slice))
     ;       file(static_file).
+
+:- type slice
+    --->    slice(c_pointer, int).
 
 :- pred set_response(request::in, response::in, io::di, io::uo) is det.
 

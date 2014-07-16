@@ -1666,31 +1666,17 @@ client_address_ipv4(client_t *client, MR_AllocSiteInfoPtr alloc_id)
 
 void
 _httpsrv_set_response_bufs(client_t *client,
-    MR_Word response_list, MR_Integer response_list_length,
+    uv_buf_t *response_bufs, MR_Integer response_bufs_length,
     MR_Integer response_file, MR_Integer response_file_size)
 {
-    uv_buf_t *response_bufs;
-    MR_Integer i;
-    MR_String s;
-
-    LOG_DEBUG("[%d:%d] set_response: response_list_length=%d\n",
-        client->id, client->request_count,
-        response_list_length);
+    LOG_DEBUG("[%d:%d] set_response: response_bufs_length=%d\n",
+        client->id, client->request_count, response_bufs_length);
 
     assert(client->response_bufs == NULL);
     assert(client->response_file == -1);
 
-    response_bufs = MR_GC_NEW_ARRAY(uv_buf_t, response_list_length);
-
-    for (i = 0; i < response_list_length; i++) {
-        assert(! MR_list_is_empty(response_list));
-        s = (const MR_String) MR_list_head(response_list);
-        response_bufs[i] = uv_buf_init(s, strlen(s));
-        response_list = MR_list_tail(response_list);
-    }
-
     client->response_bufs = response_bufs;
-    client->response_bufs_length = response_list_length;
+    client->response_bufs_length = response_bufs_length;
 
     client->response_file = response_file;
     client->response_file_size = response_file_size;

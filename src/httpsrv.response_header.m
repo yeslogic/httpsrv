@@ -5,9 +5,7 @@
 
 :- interface.
 
-:- import_module cord.
-
-:- func render_response_header(response_header) = cord(string).
+:- func render_response_header(response_header) = string.
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%
@@ -21,41 +19,39 @@
 
 %-----------------------------------------------------------------------------%
 
-render_response_header(Header) =
-    from_list(render(Header)) ++ singleton("\r\n").
-
-:- func render(response_header) = list(string).
-
-render(H) = L :-
+render_response_header(H) = S :-
     (
         H = cache_control_max_age(DeltaSeconds),
-        L = ["Cache-Control: max-age=", from_int(DeltaSeconds)]
+        S = format("Cache-Control: max-age=%d\r\n", [i(DeltaSeconds)])
     ;
         H = content_type(MediaType),
-        L = ["Content-Type: ", MediaType]
+        S = "Content-Type: " ++ MediaType ++ "\r\n"
     ;
         H = content_type_charset_utf8(MediaType),
-        L = ["Content-Type: ", MediaType, "; charset=utf-8"]
+        S = "Content-Type: " ++ MediaType ++ "; charset=utf-8\r\n"
     ;
         H = content_disposition(DispositionType),
-        L = ["Content-Disposition: ", DispositionType]
+        S = "Content-Disposition: " ++ DispositionType ++ "\r\n"
     ;
         H = location(URI),
-        L = ["Location: ", URI]
+        S = "Location: " ++ URI ++ "\r\n"
     ;
         H = set_cookie(Name - Value, Attrs),
-        L = ["Set-Cookie: ", Name, "=", Value | render_cookie_attrs(Attrs)]
+        S = format("Set-Cookie: %s=%s%s\r\n",
+                [s(Name), s(Value), s(render_cookie_attrs(Attrs))])
     ;
         H = x_content_type_options_nosniff,
-        L = ["X-Content-Type-Options: nosniff"]
+        S = "X-Content-Type-Options: nosniff\r\n"
     ;
         H = custom(Name - Value, Params),
-        L = [Name, ": ", Value | render_params(Params)]
+        S = format("%s: %s%s\r\n",
+                [s(Name), s(Value), s(render_params(Params))])
     ).
 
-:- func render_cookie_attrs(list(cookie_attribute)) = list(string).
+:- func render_cookie_attrs(list(cookie_attribute)) = string.
 
-render_cookie_attrs(Attrs) = condense(map(render_cookie_attr, Attrs)).
+render_cookie_attrs(Attrs) =
+    append_list(condense(map(render_cookie_attr, Attrs))).
 
 :- func render_cookie_attr(cookie_attribute) = list(string).
 
@@ -81,9 +77,10 @@ render_cookie_attr(Attr) = L :-
         L = ["; HttpOnly"]
     ).
 
-:- func render_params(list(pair(string))) = list(string).
+:- func render_params(list(pair(string))) = string.
 
-render_params(Pairs) = condense(map(render_param, Pairs)).
+render_params(Pairs) =
+    append_list(condense(map(render_param, Pairs))).
 
 :- func render_param(pair(string)) = list(string).
 
