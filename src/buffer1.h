@@ -35,6 +35,10 @@ buffer_advance(buffer_t *buf, ssize_t n);
 void
 buffer_shift(buffer_t *buf, ssize_t n);
 
+const unsigned char *
+buffers_join(MR_Word bufs /* list(buffer(buffer_ro)) */,
+    size_t total_len, MR_AllocSiteInfoPtr alloc_id);
+
 MR_String
 buffer_to_string_utf8(buffer_t *buf, MR_bool *valid);
 

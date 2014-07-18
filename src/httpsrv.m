@@ -14,6 +14,7 @@
 
 :- import_module case_insensitive.
 :- import_module headers.
+:- import_module slice.
 
 :- include_module httpsrv.signal.
 :- include_module httpsrv.status.
@@ -135,6 +136,9 @@
 :- pred formdata_content_to_string(formdata_content::in, string::out)
     is semidet.
 
+:- pred formdata_content_to_slice(formdata_content::in, slice::out)
+    is det.
+
 :- pred write_formdata_content_to_file(string::in, formdata_content::in,
     maybe_error::out, io::di, io::uo) is det.
 
@@ -169,9 +173,6 @@
     --->    strings(list(string))
     ;       slices(list(slice))
     ;       file(static_file).
-
-:- type slice
-    --->    slice(c_pointer, int).
 
 :- pred set_response(request::in, response::in, io::di, io::uo) is det.
 
@@ -415,6 +416,9 @@ formdata_content_length(Content) = total_length(Content).
 
 formdata_content_to_string(Bufs, String) :-
     buffers_to_string_utf8(Bufs, String).
+
+formdata_content_to_slice(Bufs, String) :-
+    buffers_to_slice(Bufs, String).
 
 write_formdata_content_to_file(Path, Bufs, Res, !IO) :-
     write_to_file(Path, Bufs, Res, !IO).

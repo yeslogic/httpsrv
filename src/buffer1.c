@@ -98,6 +98,33 @@ buffer_shift(buffer_t *buf, ssize_t n)
     buf->len = newlen;
 }
 
+static void
+buffers_join_into(MR_Word bufs, unsigned char *s, size_t total_len)
+{
+    size_t soff = 0;
+
+    while (! MR_list_is_empty(bufs)) {
+        const buffer_t *buf = (const buffer_t *) MR_list_head(bufs);
+        memcpy(s + soff, buf->data, buf->len);
+        soff += buf->len;
+        bufs = MR_list_tail(bufs);
+    }
+
+    assert(soff == total_len);
+}
+
+const unsigned char *
+buffers_join(MR_Word bufs, size_t total_len, MR_AllocSiteInfoPtr alloc_id)
+{
+    MR_Word ptr;
+    unsigned char *s;
+
+    MR_incr_hp_atomic_msg(ptr, MR_bytes_to_words(total_len), alloc_id, NULL);
+    s = (unsigned char *) ptr;
+    buffers_join_into(bufs, s, total_len);
+    return s;
+}
+
 MR_String
 buffer_to_string_utf8(buffer_t *buf, MR_bool *valid)
 {
@@ -178,15 +205,8 @@ buffers_to_string_utf8(MR_Word bufs, size_t total_len, MR_bool *valid)
     size_t soff;
 
     MR_allocate_aligned_string_msg(s, total_len, MR_ALLOC_SITE_NONE);
-    soff = 0;
-    while (! MR_list_is_empty(bufs)) {
-        const buffer_t *buf = (const buffer_t *) MR_list_head(bufs);
-        memcpy(s + soff, buf->data, buf->len);
-        soff += buf->len;
-        bufs = MR_list_tail(bufs);
-    }
+    buffers_join_into(bufs, (unsigned char *) s, total_len);
     s[total_len] = '\0';
-    assert(soff == total_len);
 
     /* Check for valid UTF-8 encoding and no embedded NULs. */
     if (strlen(s) == total_len && MR_utf8_verify(s)) {

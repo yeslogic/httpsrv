@@ -11,6 +11,8 @@
 :- import_module list.
 :- import_module maybe.
 
+:- import_module slice.
+
 %-----------------------------------------------------------------------------%
 
 :- type buffer(T).
@@ -26,6 +28,8 @@
 :- pred length(buffer(T)::in, int::out, io::di, io::uo) is det.
 
 :- func total_length(list(buffer(buffer_ro))) = int.
+
+:- pred buffers_to_slice(list(buffer(buffer_ro))::in, slice::out) is det.
 
 :- pred make_string_utf8(buffer(T)::in, int::in, int::in, maybe(string)::out,
     io::di, io::uo) is det.
@@ -88,6 +92,50 @@ total_length([Buf | Bufs], Len) = total_length(Bufs, Len + length_ro(Buf)).
     [will_not_call_mercury, promise_pure, thread_safe],
 "
     Len = Buf->len;
+").
+
+%-----------------------------------------------------------------------------%
+
+buffers_to_slice(Bufs, Slice) :-
+    (
+        Bufs = [],
+        Slice = slice(null, 0)
+    ;
+        Bufs = [Buf],
+        Slice = slice(base_ro(Buf), length_ro(Buf))
+    ;
+        Bufs = [_, _ | _],
+        Length = total_length(Bufs),
+        buffers_join(Bufs, Length, Base),
+        Slice = slice(Base, Length)
+    ).
+
+:- pred buffers_join(list(buffer(buffer_ro))::in, int::in, c_pointer::out)
+    is det.
+
+:- pragma foreign_proc("C",
+    buffers_join(Bufs::in, TotalLen::in, Base::out),
+    [will_not_call_mercury, promise_pure, thread_safe],
+"
+    Base = (MR_Word) buffers_join(Bufs, TotalLen, MR_ALLOC_ID);
+").
+
+:- func base_ro(buffer(buffer_ro)) = c_pointer.
+
+:- pragma foreign_proc("C",
+    base_ro(Buf::in) = (Base::out),
+    [will_not_call_mercury, promise_pure, thread_safe],
+"
+    Base = (MR_Word) Buf->data;
+").
+
+:- func null = c_pointer.
+
+:- pragma foreign_proc("C",
+    null = (Ptr::out),
+    [will_not_call_mercury, promise_pure, thread_safe],
+"
+    Ptr = 0;
 ").
 
 %-----------------------------------------------------------------------------%
