@@ -63,7 +63,7 @@
     make_buffer(Ptr::in, Size::in, Buf::out, _IO0::di, _IO::uo),
     [will_not_call_mercury, promise_pure, thread_safe],
 "
-    Buf = buffer_new();
+    Buf = buffer_new(MR_ALLOC_ID);
     buffer_append(Buf, (const char *) Ptr, Size);
 ").
 
@@ -158,7 +158,8 @@ make_string_utf8(Buf, StartPos, EndPos, MaybeString, !IO) :-
     [will_not_call_mercury, promise_semipure, thread_safe],
 "
     MR_bool valid;
-    Str = make_string_utf8(Buf->data, StartPos, EndPos - StartPos, &valid);
+    Str = make_string_utf8(Buf->data, StartPos, EndPos - StartPos, &valid,
+        MR_ALLOC_ID);
     SUCCESS_INDICATOR = valid;
 ").
 
@@ -175,7 +176,7 @@ buffers_to_string_utf8(Bufs, String) :-
     [will_not_call_mercury, promise_pure, thread_safe],
 "
     MR_bool valid;
-    Str = buffers_to_string_utf8(Bufs, TotalLen, &valid);
+    Str = buffers_to_string_utf8(Bufs, TotalLen, &valid, MR_ALLOC_ID);
     SUCCESS_INDICATOR = valid;
 ").
 

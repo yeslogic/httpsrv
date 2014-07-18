@@ -97,7 +97,7 @@ maybe_field(Input, ParseResult, Field, MaybeString) :-
         uint16_t len = ParseResult->field_data[Field].len;
         MR_bool valid;
 
-        Str = make_string_utf8(Input, off, len, &valid);
+        Str = make_string_utf8(Input, off, len, &valid, MR_ALLOC_ID);
         SUCCESS_INDICATOR = valid;
     } else {
         Str = MR_make_string_const("""");

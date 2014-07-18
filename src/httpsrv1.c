@@ -245,7 +245,7 @@ daemon_setup(MR_Word request_handler,
 
     r = uv_tcp_init(dmn->loop, &dmn->server);
     if (r != 0) {
-        *error_message = MR_make_string(MR_ALLOC_SITE_NONE,
+        *error_message = MR_make_string(MR_ALLOC_SITE_STRING,
             "%s", uv_strerror(uv_last_error(dmn->loop)));
         LOG_ERROR("[srv] tcp init error=%d (%s)\n", r, *error_message);
         daemon_cleanup(dmn);
@@ -254,7 +254,7 @@ daemon_setup(MR_Word request_handler,
 
     r = uv_tcp_bind(&dmn->server, uv_ip4_addr(bind_address, port));
     if (r != 0) {
-        *error_message = MR_make_string(MR_ALLOC_SITE_NONE,
+        *error_message = MR_make_string(MR_ALLOC_SITE_STRING,
             "%s", uv_strerror(uv_last_error(dmn->loop)));
         LOG_ERROR("[srv] tcp bind error=%d (%s)\n", r, *error_message);
         daemon_cleanup(dmn);
@@ -277,7 +277,7 @@ daemon_setup(MR_Word request_handler,
     r = uv_listen(stream_from_tcp(&dmn->server), back_log,
         server_on_connect);
     if (r != 0) {
-        *error_message = MR_make_string(MR_ALLOC_SITE_NONE,
+        *error_message = MR_make_string(MR_ALLOC_SITE_STRING,
             "%s", uv_strerror(uv_last_error(dmn->loop)));
         LOG_ERROR("[srv] listen error=%d (%s)\n", r, *error_message);
         daemon_cleanup(dmn);
@@ -789,9 +789,11 @@ maybe_done_prev_header(client_t *client, bool force_clear)
         ** ISO-8859-1 in some places (will be deprecated).
         */
         field = buffer_to_string_utf8(
-            &client->request_acc.header_field_buf, &valid_field);
+            &client->request_acc.header_field_buf, &valid_field,
+            MR_ALLOC_SITE_STRING);
         value = buffer_to_string_iso_8859_1(
-            &client->request_acc.header_value_buf, &valid_value);
+            &client->request_acc.header_value_buf, &valid_value,
+            MR_ALLOC_SITE_STRING);
 
         if (!valid_field || !valid_value) {
             LOG_INFO("[%d:%d] invalid header\n",
@@ -879,7 +881,7 @@ client_on_headers_complete(http_parser *parser)
 
     /* Pick up the Request-URI. Should be limited to US-ASCII. */
     request_uri = buffer_to_string_utf8(&client->request_acc.request_uri_buf,
-        &valid);
+        &valid, MR_ALLOC_SITE_STRING);
     buffer_clear(&client->request_acc.request_uri_buf);
     if (!valid) {
         return -1;
@@ -1217,7 +1219,8 @@ client_set_request_body(client_t *client)
         MR_bool valid;
 
         /* Perhaps we need to support other charsets here. */
-        body = buffer_to_string_utf8(&client->request_acc.body_buf, &valid);
+        body = buffer_to_string_utf8(&client->request_acc.body_buf, &valid,
+            MR_ALLOC_SITE_STRING);
         if (!valid) {
             return false;
         }

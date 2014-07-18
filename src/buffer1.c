@@ -35,9 +35,9 @@ buffer_init(buffer_t *buf)
 }
 
 buffer_t *
-buffer_new(void)
+buffer_new(MR_AllocSiteInfoPtr alloc_id)
 {
-    buffer_t *buf = MR_GC_NEW(buffer_t);
+    buffer_t *buf = MR_GC_NEW_ATTRIB(buffer_t, alloc_id);
     buffer_init(buf);
     return buf;
 }
@@ -126,17 +126,19 @@ buffers_join(MR_Word bufs, size_t total_len, MR_AllocSiteInfoPtr alloc_id)
 }
 
 MR_String
-buffer_to_string_utf8(buffer_t *buf, MR_bool *valid)
+buffer_to_string_utf8(buffer_t *buf, MR_bool *valid,
+    MR_AllocSiteInfoPtr alloc_id)
 {
-    return make_string_utf8(buf->data, 0, buf->len, valid);
+    return make_string_utf8(buf->data, 0, buf->len, valid, alloc_id);
 }
 
 MR_String
-make_string_utf8(const char *buf, size_t off, size_t len, MR_bool *valid)
+make_string_utf8(const char *buf, size_t off, size_t len, MR_bool *valid,
+    MR_AllocSiteInfoPtr alloc_id)
 {
     MR_String s;
 
-    MR_allocate_aligned_string_msg(s, len, MR_ALLOC_SITE_NONE);
+    MR_allocate_aligned_string_msg(s, len, alloc_id);
     memcpy(s, buf + off, len);
     s[len] = '\0';
 
@@ -151,13 +153,15 @@ make_string_utf8(const char *buf, size_t off, size_t len, MR_bool *valid)
 }
 
 MR_String
-buffer_to_string_iso_8859_1(buffer_t *buf, MR_bool *valid)
+buffer_to_string_iso_8859_1(buffer_t *buf, MR_bool *valid,
+    MR_AllocSiteInfoPtr alloc_id)
 {
-    return make_string_iso_8859_1(buf->data, 0, buf->len, valid);
+    return make_string_iso_8859_1(buf->data, 0, buf->len, valid, alloc_id);
 }
 
 MR_String
-make_string_iso_8859_1(const char *buf, size_t off, size_t len, MR_bool *valid)
+make_string_iso_8859_1(const char *buf, size_t off, size_t len, MR_bool *valid,
+    MR_AllocSiteInfoPtr alloc_id)
 {
     MR_String s;
     size_t enclen;
@@ -179,7 +183,7 @@ make_string_iso_8859_1(const char *buf, size_t off, size_t len, MR_bool *valid)
         }
     }
 
-    MR_allocate_aligned_string_msg(s, enclen, MR_ALLOC_SITE_NONE);
+    MR_allocate_aligned_string_msg(s, enclen, alloc_id);
 
     if (enclen == len) {
         /* Fast path: only ASCII. */
@@ -199,12 +203,13 @@ make_string_iso_8859_1(const char *buf, size_t off, size_t len, MR_bool *valid)
 }
 
 MR_String
-buffers_to_string_utf8(MR_Word bufs, size_t total_len, MR_bool *valid)
+buffers_to_string_utf8(MR_Word bufs, size_t total_len, MR_bool *valid,
+    MR_AllocSiteInfoPtr alloc_id)
 {
     MR_String s;
     size_t soff;
 
-    MR_allocate_aligned_string_msg(s, total_len, MR_ALLOC_SITE_NONE);
+    MR_allocate_aligned_string_msg(s, total_len, alloc_id);
     buffers_join_into(bufs, (unsigned char *) s, total_len);
     s[total_len] = '\0';
 

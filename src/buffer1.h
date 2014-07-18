@@ -18,7 +18,7 @@ void
 buffer_init(buffer_t *buf);
 
 buffer_t *
-buffer_new(void);
+buffer_new(MR_AllocSiteInfoPtr alloc_id);
 
 void
 buffer_clear(buffer_t *buf);
@@ -40,21 +40,24 @@ buffers_join(MR_Word bufs /* list(buffer(buffer_ro)) */,
     size_t total_len, MR_AllocSiteInfoPtr alloc_id);
 
 MR_String
-buffer_to_string_utf8(buffer_t *buf, MR_bool *valid);
+buffer_to_string_utf8(buffer_t *buf, MR_bool *valid,
+    MR_AllocSiteInfoPtr alloc_id);
 
 MR_String
-make_string_utf8(const char *buf, size_t off, size_t len, MR_bool *valid);
+make_string_utf8(const char *buf, size_t off, size_t len, MR_bool *valid,
+    MR_AllocSiteInfoPtr alloc_id);
 
 MR_String
-buffer_to_string_iso_8859_1(buffer_t *buf, MR_bool *valid);
+buffer_to_string_iso_8859_1(buffer_t *buf, MR_bool *valid,
+    MR_AllocSiteInfoPtr alloc_id);
 
 MR_String
 make_string_iso_8859_1(const char *buf, size_t off, size_t len,
-    MR_bool *valid);
+    MR_bool *valid, MR_AllocSiteInfoPtr alloc_id);
 
 MR_String
 buffers_to_string_utf8(MR_Word bufs /* list(buffer(buffer_ro)) */,
-    size_t total_len, MR_bool *valid);
+    size_t total_len, MR_bool *valid, MR_AllocSiteInfoPtr alloc_id);
 
 #endif
 
