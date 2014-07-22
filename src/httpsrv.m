@@ -344,7 +344,7 @@ call_periodic_handler_pred(Pred, !IO) :-
 
 :- pragma foreign_proc("C",
     run(Daemon::in, _IO0::di, _IO::uo),
-    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+    [may_call_mercury, promise_pure, thread_safe, tabled_for_io,
         may_not_duplicate],
 "
     uv_run(Daemon->loop, UV_RUN_DEFAULT);
