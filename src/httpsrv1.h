@@ -258,8 +258,8 @@ _httpsrv_set_response_bufs(client_t *client,
     uv_buf_t *response_bufs, MR_Integer response_bufs_length,
     MR_Integer response_file, MR_Integer response_file_size);
 
-void
-_httpsrv_send_async(client_t *client);
+static void
+send_async(client_t *client);
 
 bool
 _httpsrv_client_should_keep_alive(client_t *client);

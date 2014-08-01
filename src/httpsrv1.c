@@ -467,8 +467,8 @@ client_set_state(client_t *client, enum client_state new_state)
                 || new_state == CLOSING);
             break;
         case PREPARING_RESPONSE:
-            assert(new_state == WRITING_RESPONSE);
-            /* not CLOSING */
+            assert(new_state == WRITING_RESPONSE
+                || new_state == CLOSING);
             break;
         case WRITING_RESPONSE:
             assert(new_state == IDLE
@@ -1258,8 +1258,16 @@ client_on_async(uv_async_t *async, int status)
 
     client->time_request_handler_end = uv_now(loop);
 
-    /* We hold onto response_bufs while writing to prevent collection. */
-    assert(client->response_bufs != NULL);
+    /*
+    ** If no response given then just close.
+    */
+    if (client->response_bufs == NULL) {
+        LOG_INFO("[%d:%d] on_async: no response given\n",
+            client->id, client->request_count);
+        client_close_response_file(client);
+        client_close(client, __LINE__);
+        return;
+    }
 
     client_set_state(client, WRITING_RESPONSE);
 
@@ -1268,7 +1276,10 @@ client_on_async(uv_async_t *async, int status)
     uv_timer_start(&client->timer, client_on_write_timeout,
         WRITE_TIMEOUT, WRITE_TIMEOUT);
 
-    /* Begin writing. */
+    /*
+    ** Begin writing.
+    ** We hold onto response_bufs while writing to prevent collection.
+    **/
     uv_write(&client->write_req, client_tcp_stream(client),
         client->response_bufs, client->response_bufs_length,
         client_after_write_response_bufs);
@@ -1714,8 +1725,8 @@ _httpsrv_set_response_bufs(client_t *client,
     client->response_file_size = response_file_size;
 }
 
-void
-_httpsrv_send_async(client_t *client)
+static void
+send_async(client_t *client)
 {
     /*
     ** We can't call libuv functions off the main thread.
@@ -1723,7 +1734,6 @@ _httpsrv_send_async(client_t *client)
     */
 
     assert(client->state == PREPARING_RESPONSE);
-    assert(client->response_bufs != NULL);
 
     uv_async_send(&client->async);
 }

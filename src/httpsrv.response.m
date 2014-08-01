@@ -117,7 +117,6 @@ set_response(Request, response(Status, AdditionalHeaders, Content), !IO) :-
 "
     _httpsrv_set_response_bufs(Client, BufArray, BufArrayLength,
         FileFd, FileLength);
-    _httpsrv_send_async(Client);
 ").
 
 :- pred skip_body(request::in) is semidet.

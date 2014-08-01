@@ -179,6 +179,8 @@
 
 :- pred set_response(request::in, response::in, io::di, io::uo) is det.
 
+:- pred set_response_none(request::in, io::di, io::uo) is det.
+
 %-----------------------------------------------------------------------------%
 
 % Serving static files
@@ -445,7 +447,21 @@ write_formdata_content_to_file(Path, Bufs, Res, !IO) :-
 %-----------------------------------------------------------------------------%
 
 set_response(Request, Response, !IO) :-
-    response.set_response(Request, Response, !IO).
+    response.set_response(Request, Response, !IO),
+    send_async(Request ^ client, !IO).
+
+set_response_none(Request, !IO) :-
+    send_async(Request ^ client, !IO).
+
+:- pred send_async(client::in, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    send_async(Client::in, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
+    send_async(Client);
+").
 
 %-----------------------------------------------------------------------------%
 
