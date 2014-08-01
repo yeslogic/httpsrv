@@ -7,6 +7,12 @@
 
 #include "httpsrv.request.mh"
 
+#ifndef _WIN32
+    /* Only tested on Linux for now. */
+    #define SUPPORT_CLIENT_SOCKET_OK
+    #include <poll.h>
+#endif
+
 /*
 ** Constants
 */
@@ -1661,6 +1667,29 @@ client_address_ipv4(client_t *client, MR_AllocSiteInfoPtr alloc_id)
         }
     }
     return s;
+}
+
+/*
+** Check client socket not closed yet (not portable)
+*/
+
+static bool
+client_socket_ok(client_t *client)
+{
+#ifdef SUPPORT_CLIENT_SOCKET_OK
+    uv_stream_t *stream = client_tcp_stream(client);
+    int fd;
+    char buffer[32];
+
+    /* Not portable but there is no public API. */
+    fd = stream->io_watcher.fd;
+
+    /* recv returns zero when the peer has performed an orderly shutdown. */
+    if (recv(fd, buffer, sizeof(buffer), MSG_PEEK | MSG_DONTWAIT) == 0) {
+        return false;
+    }
+#endif
+    return true;
 }
 
 /*

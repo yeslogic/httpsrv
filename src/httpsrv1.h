@@ -250,6 +250,9 @@ client_unlink(client_t *client);
 static MR_String
 client_address_ipv4(client_t *client, MR_AllocSiteInfoPtr alloc_id);
 
+static bool
+client_socket_ok(client_t *client);
+
 void
 _httpsrv_set_response_bufs(client_t *client,
     uv_buf_t *response_bufs, MR_Integer response_bufs_length,

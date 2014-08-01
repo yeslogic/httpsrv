@@ -6,6 +6,7 @@
 :- interface.
 
 :- import_module assoc_list.
+:- import_module bool.
 :- import_module io.
 :- import_module list.
 :- import_module maybe.
@@ -88,6 +89,8 @@
             % Keys are in RECEIVED order and duplicate keys are possible.
     ;       multipart_formdata(assoc_list(string, formdata)).
 
+:- func method_string(method) = string.
+
 :- func get_method(request) = method.
 
     % Return the raw Request-URI on the Request-Line.
@@ -114,7 +117,7 @@
 :- pred get_client_address_ipv4(request::in, maybe(string)::out,
     io::di, io::uo) is det.
 
-:- func method_string(method) = string.
+:- pred check_client_socket(request::in, bool::out, io::di, io::uo) is det.
 
 %-----------------------------------------------------------------------------%
 
@@ -196,7 +199,6 @@
 
 :- implementation.
 
-:- import_module bool.
 :- import_module int.
 :- import_module string.
 :- import_module time.
@@ -353,6 +355,15 @@ call_periodic_handler_pred(Pred, !IO) :-
 
 %-----------------------------------------------------------------------------%
 
+method_string(delete) = "DELETE".
+method_string(get) = "GET".
+method_string(head) = "HEAD".
+method_string(post) = "POST".
+method_string(put) = "PUT".
+method_string(other(String)) = string.to_upper(String).
+
+%-----------------------------------------------------------------------------%
+
 get_method(Request) = Request ^ method.
 
 get_request_uri(Request) = Request ^ request_uri.
@@ -403,12 +414,20 @@ get_client_address_ipv4(Request, Res, !IO) :-
     String = client_address_ipv4(Client, MR_ALLOC_ID);
 ").
 
-method_string(delete) = "DELETE".
-method_string(get) = "GET".
-method_string(head) = "HEAD".
-method_string(post) = "POST".
-method_string(put) = "PUT".
-method_string(other(String)) = string.to_upper(String).
+%-----------------------------------------------------------------------------%
+
+check_client_socket(Request, Ok, !IO) :-
+    client_socket_ok(Request ^ client, Ok, !IO).
+
+:- pred client_socket_ok(client::in, bool::out, io::di, io::uo) is det.
+
+:- pragma foreign_proc("C",
+    client_socket_ok(Client::in, Ok::out, _IO0::di, _IO::uo),
+    [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
+        may_not_duplicate],
+"
+    Ok = client_socket_ok(Client) ? MR_YES : MR_NO;
+").
 
 %-----------------------------------------------------------------------------%
 
