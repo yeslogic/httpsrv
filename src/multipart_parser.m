@@ -119,7 +119,7 @@ static void *
 local_memmem(const void *haystack, size_t haystacklen,
              const void *needle, size_t needlelen)
 {
-#ifdef _GNU_SOURCE
+#if defined(_GNU_SOURCE) && !defined(__MINGW32__)
     return memmem(haystack, haystacklen, needle, needlelen);
 #else
     const unsigned char *hayst = haystack;
