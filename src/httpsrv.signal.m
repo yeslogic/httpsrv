@@ -25,8 +25,10 @@
     [will_not_call_mercury, promise_pure, thread_safe, tabled_for_io,
         may_not_duplicate],
 "
+#ifdef SIGPIPE
     MR_setup_signal(SIGPIPE, handle_sigpipe, MR_FALSE,
         ""cannot install signal handler (SIGPIPE)"");
+#endif
 ").
 
 :- pragma foreign_code("C", "
