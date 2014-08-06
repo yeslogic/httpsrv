@@ -8,6 +8,10 @@ include $(HTTPSRV_DIR)/src/httpsrv.options
 MLOBJS-httpsrv_test = $(HTTPSRV_OBJS)
 MLLIBS-httpsrv_test += -lrt
 
+# for Windows
+# MLLIBS-httpsrv_test += -lws2_32 -lpsapi -liphlpapi
+# LDFLAGS-httpsrv_test += -pthread
+
 -include Mercury.params
 
 # vim: ft=make
