@@ -5,8 +5,7 @@ MCFLAGS += --grade $(GRADE)
 HTTPSRV_DIR = ..
 include $(HTTPSRV_DIR)/src/httpsrv.options
 
-MLOBJS-httpsrv_test = $(HTTPSRV_OBJS)
-MLLIBS-httpsrv_test += -lrt
+MLLIBS-httpsrv_test += -luv -lhttp_parser -lrt
 
 # for Windows
 # MLLIBS-httpsrv_test += -lws2_32 -lpsapi -liphlpapi
