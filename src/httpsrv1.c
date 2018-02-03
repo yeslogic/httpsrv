@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014 YesLogic Pty. Ltd.
+** Copyright (C) 2014, 2018 YesLogic Pty. Ltd.
 ** All rights reserved.
 */
 
@@ -231,6 +231,7 @@ daemon_setup(MR_Word request_handler,
     MR_String *error_message)
 {
     daemon_t *dmn;
+    struct sockaddr_in addr;
     int r;
 
     dmn = MR_GC_NEW(daemon_t);
@@ -238,30 +239,40 @@ daemon_setup(MR_Word request_handler,
 
     dmn->magic = DAEMON_MAGIC;
     dmn->state = DAEMON_STARTING;
-    dmn->loop = uv_loop_new();
+
+    uv_loop_init(&dmn->loop);
 
     dmn->signal1.data = dmn; /* for daemon_cleanup */
     dmn->signal2.data = dmn; /* for daemon_cleanup */
     dmn->server.data = dmn; /* for daemon_cleanup */
 
-    uv_signal_init(dmn->loop, &dmn->signal1);
-    uv_signal_init(dmn->loop, &dmn->signal2);
+    uv_signal_init(&dmn->loop, &dmn->signal1);
+    uv_signal_init(&dmn->loop, &dmn->signal2);
     uv_signal_start(&dmn->signal1, daemon_on_signal, SIGINT);
     uv_signal_start(&dmn->signal2, daemon_on_signal, SIGTERM);
 
-    r = uv_tcp_init(dmn->loop, &dmn->server);
-    if (r != 0) {
+    r = uv_tcp_init(&dmn->loop, &dmn->server);
+    if (r < 0) {
         *error_message = MR_make_string(MR_ALLOC_SITE_STRING,
-            "%s", uv_strerror(uv_last_error(dmn->loop)));
+            "%s", uv_strerror(r));
         LOG_ERROR("[srv] tcp init error=%d (%s)\n", r, *error_message);
         daemon_cleanup(dmn);
         return NULL;
     }
 
-    r = uv_tcp_bind(&dmn->server, uv_ip4_addr(bind_address, port));
-    if (r != 0) {
+    r = uv_ip4_addr(bind_address, port, &addr);
+    if (r < 0) {
         *error_message = MR_make_string(MR_ALLOC_SITE_STRING,
-            "%s", uv_strerror(uv_last_error(dmn->loop)));
+            "%s", uv_strerror(r));
+        LOG_ERROR("[srv] ip4 address error=%d (%s)\n", r, *error_message);
+        daemon_cleanup(dmn);
+        return NULL;
+    }
+
+    r = uv_tcp_bind(&dmn->server, (const struct sockaddr *)&addr, 0);
+    if (r < 0) {
+        *error_message = MR_make_string(MR_ALLOC_SITE_STRING,
+            "%s", uv_strerror(r));
         LOG_ERROR("[srv] tcp bind error=%d (%s)\n", r, *error_message);
         daemon_cleanup(dmn);
         return NULL;
@@ -282,9 +293,9 @@ daemon_setup(MR_Word request_handler,
 
     r = uv_listen(stream_from_tcp(&dmn->server), back_log,
         server_on_connect);
-    if (r != 0) {
+    if (r < 0) {
         *error_message = MR_make_string(MR_ALLOC_SITE_STRING,
-            "%s", uv_strerror(uv_last_error(dmn->loop)));
+            "%s", uv_strerror(r));
         LOG_ERROR("[srv] listen error=%d (%s)\n", r, *error_message);
         daemon_cleanup(dmn);
         return NULL;
@@ -309,13 +320,13 @@ daemon_cleanup(daemon_t *dmn)
 
     daemon_cleanup_periodics(dmn);
 
-    uv_run(dmn->loop, UV_RUN_DEFAULT);
+    uv_run(&dmn->loop, UV_RUN_DEFAULT);
 
     assert(dmn->clients == NULL);
 
     /* uv_print_all_handles(dmn->loop); */
 
-    uv_loop_delete(dmn->loop);
+    uv_loop_close(&dmn->loop);
 
     MR_GC_free(dmn);
 }
@@ -328,18 +339,18 @@ daemon_add_periodic(daemon_t *dmn, MR_Integer milliseconds,
 
     periodic = MR_GC_NEW(struct periodic);
     periodic->magic = PERIODIC_MAGIC;
-    uv_timer_init(dmn->loop, &periodic->timer);
+    uv_timer_init(&dmn->loop, &periodic->timer);
     periodic->timer.data = periodic;
     periodic->handler = periodic_handler;
     periodic->next = dmn->periodics;
     dmn->periodics = periodic;
 
-    uv_update_time(dmn->loop);
+    uv_update_time(&dmn->loop);
     uv_timer_start(&periodic->timer, daemon_on_periodic_timer,
         milliseconds, milliseconds);
 
     LOG_INFO("[srv] add periodic: now=%ld, milliseconds=%ld\n",
-        uv_now(dmn->loop), milliseconds);
+        uv_now(&dmn->loop), milliseconds);
 }
 
 static void
@@ -362,7 +373,7 @@ daemon_cleanup_periodics(daemon_t *dmn)
 static client_t *
 make_client(daemon_t *dmn)
 {
-    uv_loop_t *loop = dmn->loop;
+    uv_loop_t *loop = &dmn->loop;
     client_t *client;
 
     /*
@@ -526,7 +537,7 @@ daemon_on_signal(uv_signal_t *sig, int status)
 }
 
 static void
-daemon_on_periodic_timer(uv_timer_t *timer, int status)
+daemon_on_periodic_timer(uv_timer_t *timer)
 {
     struct periodic *periodic = periodic_from_handle_data(
         handle_from_timer(timer));
@@ -551,10 +562,10 @@ server_on_connect(uv_stream_t *server_handle, int status)
     LOG_DEBUG("[srv] server_on_connect\n");
 
     client = make_client(dmn);
-    client->time_connect = uv_now(dmn->loop);
+    client->time_connect = uv_now(&dmn->loop);
 
     r = uv_accept(server_handle, client_tcp_stream(client));
-    if (r != 0) {
+    if (r < 0) {
         LOG_WARN("[%d:%d] accept failed\n", client->id, client->request_count);
         client_close(client, __LINE__);
         return;
@@ -582,7 +593,12 @@ client_resume_read(client_t *client, uv_timer_cb timeout_cb, int64_t timeout)
     }
 
     if (client->read_buf.len > 0) {
-        client_on_read(client_tcp_stream(client), 0, uv_buf_init(0, 0));
+        /* client_on_read actually uses client->read_buf directly */
+        const uv_buf_t buf = uv_buf_init(
+            client->read_buf.data,
+            client->read_buf.len
+        );
+        client_on_read(client_tcp_stream(client), 0, &buf);
     }
 
     uv_update_time(loop);
@@ -612,8 +628,8 @@ client_pause_read(client_t *client)
     uv_timer_stop(&client->timer);
 }
 
-static uv_buf_t
-client_on_alloc(uv_handle_t *handle, size_t suggested_size)
+static void
+client_on_alloc(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf)
 {
     uv_stream_t *stream = stream_from_tcp(tcp_from_handle_checked(handle));
     client_t *client = client_from_stream_data(stream);
@@ -628,16 +644,29 @@ client_on_alloc(uv_handle_t *handle, size_t suggested_size)
 
     ptr = buffer_reserve(&client->read_buf, suggested_size);
 
-    return uv_buf_init(ptr, suggested_size);
+    buf->base = ptr;
+    buf->len = suggested_size;
 }
 
 static void
-client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf)
+client_on_read(uv_stream_t *tcp, ssize_t nread, const uv_buf_t *buf)
 {
     client_t *client = client_from_stream_data(tcp);
 
     LOG_DEBUG("[%d:%d] on_read: nread=%d\n",
         client->id, client->request_count, nread);
+
+    if (nread < 0) {
+        if (nread == UV_EOF) {
+            LOG_INFO("[%d:%d] read eof\n",
+                client->id, client->request_count);
+        } else {
+            LOG_NOTICE("[%d:%d] read error: %s\n",
+                client->id, client->request_count, uv_strerror(nread));
+        }
+        client_close(client, __LINE__);
+        return;
+    }
 
     if (nread > 0) {
         buffer_advance(&client->read_buf, nread);
@@ -650,20 +679,6 @@ client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf)
         LOG_DEBUG("[%d:%d] on_read: deferred read timeout, now=%d\n",
             client->id, client->request_count,
             uv_now(client->timer.loop));
-    }
-
-    if (nread < 0) {
-        uv_err_t err = uv_last_error(client->daemon->loop);
-        if (err.code == UV_EOF) {
-            LOG_INFO("[%d:%d] read eof\n",
-                client->id, client->request_count);
-        } else {
-            LOG_NOTICE("[%d:%d] read error: %s\n",
-                client->id, client->request_count,
-                uv_strerror(err));
-        }
-        client_close(client, __LINE__);
-        return;
     }
 
     assert(client->state == IDLE
@@ -709,7 +724,7 @@ client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf)
 }
 
 static void
-client_on_read_timeout(uv_timer_t *timer, int status)
+client_on_read_timeout(uv_timer_t *timer)
 {
     client_t *client = client_from_timer_data(timer);
     uv_loop_t *loop = timer->loop;
@@ -732,7 +747,7 @@ static int
 client_on_message_begin(http_parser *parser)
 {
     client_t *client = client_from_parser_data(parser);
-    uv_loop_t *loop = client->daemon->loop;
+    uv_loop_t *loop = &client->daemon->loop;
 
     client->request_count++;
     client->time_message_begin = uv_now(loop);
@@ -1067,7 +1082,7 @@ static int
 client_on_message_complete(http_parser *parser)
 {
     client_t *client = client_from_parser_data(parser);
-    uv_loop_t *loop = client->daemon->loop;
+    uv_loop_t *loop = &client->daemon->loop;
     MR_String method;
     bool valid;
 
@@ -1237,13 +1252,13 @@ client_set_request_body(client_t *client)
 }
 
 static void
-client_on_async(uv_async_t *async, int status)
+client_on_async(uv_async_t *async)
 {
     client_t *client = client_from_async_data(async);
-    uv_loop_t *loop = client->daemon->loop;
+    uv_loop_t *loop = &client->daemon->loop;
 
-    LOG_DEBUG("[%d:%d] on_async: status=%d, state=%s\n",
-        client->id, client->request_count, status,
+    LOG_DEBUG("[%d:%d] on_async: state=%s\n",
+        client->id, client->request_count,
         state_to_string(client->state));
 
     /*
@@ -1286,7 +1301,7 @@ client_on_async(uv_async_t *async, int status)
 }
 
 static void
-client_on_write_timeout(uv_timer_t *timer, int status)
+client_on_write_timeout(uv_timer_t *timer)
 {
     client_t *client = client_from_timer_data(timer);
 
@@ -1339,7 +1354,9 @@ client_after_write_response_bufs(uv_write_t *req, int status)
 static void
 client_start_response_file(client_t *client)
 {
-    uv_loop_t *loop = client->daemon->loop;
+    uv_loop_t *loop = &client->daemon->loop;
+    const int nbufs = 1;
+    uv_buf_t bufs[nbufs];
     int r;
 
     LOG_DEBUG("[%d:%d] start_response_file: fd=%d\n",
@@ -1357,11 +1374,14 @@ client_start_response_file(client_t *client)
         WRITE_TIMEOUT, WRITE_TIMEOUT);
 
     /* Start reading. */
+    bufs[0] = uv_buf_init(
+        client->response_file_buf.data,
+        client->response_file_buf.cap
+    );
     r = uv_fs_read(loop,
         &client->response_file_req, client->response_file,
-        client->response_file_buf.data, client->response_file_buf.cap, -1,
-        client_on_read_response_file_buf);
-    if (r != 0) {
+        bufs, nbufs, -1, client_on_read_response_file_buf);
+    if (r < 0) {
         client_after_response_file(client, -1);
     }
 }
@@ -1370,7 +1390,7 @@ static void
 client_on_read_response_file_buf(uv_fs_t *req)
 {
     client_t *client = client_from_fs(req);
-    uv_loop_t *loop = client->daemon->loop;
+    uv_loop_t *loop = &client->daemon->loop;
     ssize_t nread;
     const int nbufs = 1;
     uv_buf_t bufs[nbufs];
@@ -1415,6 +1435,8 @@ static void
 client_after_write_response_file_buf(uv_write_t *req, int status)
 {
     client_t *client = client_from_stream_data(req->handle);
+    const int nbufs = 1;
+    uv_buf_t bufs[1];
     int r;
 
     LOG_DEBUG("[%d:%d] after_write_response_file_buf: status=%d, state=%s\n",
@@ -1438,11 +1460,15 @@ client_after_write_response_file_buf(uv_write_t *req, int status)
 
     assert(client->response_file_buf.cap > 0);
 
-    r = uv_fs_read(client->daemon->loop,
+    bufs[0] = uv_buf_init(
+        client->response_file_buf.data,
+        client->response_file_buf.cap
+    );
+
+    r = uv_fs_read(&client->daemon->loop,
         &client->response_file_req, client->response_file,
-        client->response_file_buf.data, client->response_file_buf.cap, -1,
-        client_on_read_response_file_buf);
-    if (r != 0) {
+        bufs, nbufs, -1, client_on_read_response_file_buf);
+    if (r < 0) {
         client_after_response_file(client, -1);
         assert(client->state == CLOSING);
     }
@@ -1474,7 +1500,7 @@ client_close_response_file(client_t *client)
         client->id, client->request_count, client->response_file);
 
     /* Synchronous close (because of null callback). */
-    uv_fs_close(client->daemon->loop, &close_req, client->response_file, NULL);
+    uv_fs_close(&client->daemon->loop, &close_req, client->response_file, NULL);
     client->response_file = -1;
     client->response_file_size = 0;
     buffer_init(&client->response_file_buf);
@@ -1483,7 +1509,7 @@ client_close_response_file(client_t *client)
 static void
 client_after_full_response(client_t *client, int status)
 {
-    client->time_request_sent = uv_now(client->daemon->loop);
+    client->time_request_sent = uv_now(&client->daemon->loop);
 
     LOG_DEBUG("[%d:%d] after_full_response: status=%d, state=%s\n",
         client->id, client->request_count, status,
@@ -1551,7 +1577,7 @@ client_log_times(client_t *client)
 }
 
 static void
-client_on_keepalive_timeout(uv_timer_t *timer, int status)
+client_on_keepalive_timeout(uv_timer_t *timer)
 {
     client_t *client = client_from_timer_data(timer);
     uv_loop_t *loop = timer->loop;
@@ -1613,7 +1639,7 @@ static void
 client_on_close_3(uv_handle_t *handle)
 {
     client_t *client = client_from_handle_data(handle);
-    uv_loop_t *loop = client->daemon->loop;
+    uv_loop_t *loop = &client->daemon->loop;
 
     LOG_DEBUG("[%d:%d] on_close_3\n", client->id, client->request_count);
 
@@ -1667,16 +1693,14 @@ client_address_ipv4(client_t *client, MR_AllocSiteInfoPtr alloc_id)
 
     namelen = sizeof(name);
     r = uv_tcp_getpeername(&client->tcp, (struct sockaddr *) &name, &namelen);
-    if (r != 0 || namelen > sizeof(name)) {
-        s = MR_make_string_const("");
-    } else {
-        r = uv_ip4_name(&name, tmp, sizeof(tmp));
-        if (r == 0) {
-            MR_make_aligned_string_copy_msg(s, tmp, alloc_id);
-        } else {
-            s = MR_make_string_const("");
-        }
+    if (r < 0 || namelen > sizeof(name)) {
+        return MR_make_string_const("");
     }
+    r = uv_ip4_name(&name, tmp, sizeof(tmp));
+    if (r < 0) {
+        return MR_make_string_const("");
+    }
+    MR_make_aligned_string_copy_msg(s, tmp, alloc_id);
     return s;
 }
 
@@ -1690,10 +1714,13 @@ client_socket_ok(client_t *client)
 #ifdef SUPPORT_CLIENT_SOCKET_OK
     uv_stream_t *stream = client_tcp_stream(client);
     int fd;
+    int r;
     char buffer[32];
 
-    /* Not portable but there is no public API. */
-    fd = stream->io_watcher.fd;
+    r = uv_fileno(handle_from_stream(stream), &fd);
+    if (r < 0) {
+        return false;
+    }
 
     /* recv returns zero when the peer has performed an orderly shutdown. */
     if (recv(fd, buffer, sizeof(buffer), MSG_PEEK | MSG_DONTWAIT) == 0) {

@@ -1,6 +1,6 @@
 :- module httpsrv.
 
-% Copyright (C) 2014 YesLogic Pty. Ltd.
+% Copyright (C) 2014, 2018 YesLogic Pty. Ltd.
 % All rights reserved.
 
 :- interface.
@@ -351,7 +351,7 @@ call_periodic_handler_pred(Pred, !IO) :-
     [may_call_mercury, promise_pure, thread_safe, tabled_for_io,
         may_not_duplicate],
 "
-    uv_run(Daemon->loop, UV_RUN_DEFAULT);
+    uv_run(&Daemon->loop, UV_RUN_DEFAULT);
     daemon_cleanup(Daemon);
 ").
 

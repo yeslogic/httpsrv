@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2014 YesLogic Pty. Ltd.
+** Copyright (C) 2014, 2018 YesLogic Pty. Ltd.
 ** All rights reserved.
 */
 
@@ -20,7 +20,7 @@ enum daemon_state {
 struct daemon {
     unsigned magic;             /* DAEMON_MAGIC */
     enum daemon_state state;
-    uv_loop_t *loop;
+    uv_loop_t loop;
     uv_signal_t signal1;
     uv_signal_t signal2;
     uv_tcp_t server;
@@ -127,7 +127,7 @@ static void
 daemon_on_signal(uv_signal_t *signal, int status);
 
 static void
-daemon_on_periodic_timer(uv_timer_t *timer, int status);
+daemon_on_periodic_timer(uv_timer_t *timer);
 
 static void
 server_on_connect(uv_stream_t *server_handle, int status);
@@ -138,14 +138,14 @@ client_resume_read(client_t *client, uv_timer_cb timeout_cb, int64_t timeout);
 static void
 client_pause_read(client_t *client);
 
-static uv_buf_t
-client_on_alloc(uv_handle_t *client, size_t suggested_size);
+static void
+client_on_alloc(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf);
 
 static void
-client_on_read(uv_stream_t *tcp, ssize_t nread, uv_buf_t buf);
+client_on_read(uv_stream_t *tcp, ssize_t nread, const uv_buf_t *buf);
 
 static void
-client_on_read_timeout(uv_timer_t *timer, int status);
+client_on_read_timeout(uv_timer_t *timer);
 
 static int
 client_on_message_begin(http_parser *parser);
@@ -200,10 +200,10 @@ static bool
 client_set_request_body(client_t *client);
 
 static void
-client_on_async(uv_async_t *async, int status);
+client_on_async(uv_async_t *async);
 
 static void
-client_on_write_timeout(uv_timer_t *timer, int status);
+client_on_write_timeout(uv_timer_t *timer);
 
 static void
 client_after_write_response_bufs(uv_write_t *req, int status);
@@ -230,7 +230,7 @@ static void
 client_log_times(client_t *client);
 
 static void
-client_on_keepalive_timeout(uv_timer_t *timer, int status);
+client_on_keepalive_timeout(uv_timer_t *timer);
 
 static void
 client_close(client_t *client, int line);
