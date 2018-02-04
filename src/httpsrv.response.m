@@ -1,6 +1,6 @@
 :- module httpsrv.response.
 
-% Copyright (C) 2014 YesLogic Pty. Ltd.
+% Copyright (C) 2014, 2018 YesLogic Pty. Ltd.
 % All rights reserved.
 
 :- interface.
@@ -19,9 +19,7 @@
 :- import_module http_date.
 :- import_module httpsrv.response_header.
 
-:- pragma foreign_decl("C", local, "
-    #include ""httpsrv1.h""
-").
+:- pragma foreign_decl("C", local, include_file("httpsrv1.h")).
 
 :- type uv_buf_array.
 

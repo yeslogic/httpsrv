@@ -1,6 +1,6 @@
 :- module buffer.
 
-% Copyright (C) 2014 YesLogic Pty. Ltd.
+% Copyright (C) 2014, 2018 YesLogic Pty. Ltd.
 % All rights reserved.
 
 :- interface.
@@ -46,13 +46,8 @@
 
 :- pragma foreign_type("C", buffer(T), "buffer_t *").
 
-:- pragma foreign_decl("C", "
-    #include ""buffer1.h""
-").
-
-:- pragma foreign_code("C", "
-    #include ""buffer1.c""
-").
+:- pragma foreign_decl("C", include_file("buffer1.h")).
+:- pragma foreign_code("C", include_file("buffer1.c")).
 
 :- type buffer_rw ---> buffer_rw.
 :- type buffer_ro ---> buffer_ro.

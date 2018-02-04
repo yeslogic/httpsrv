@@ -234,13 +234,8 @@
     typedef struct buffer buffer_t;
 ").
 
-:- pragma foreign_decl("C", local, "
-    #include ""httpsrv1.h""
-").
-
-:- pragma foreign_code("C", "
-    #include ""httpsrv1.c""
-").
+:- pragma foreign_decl("C", local, include_file("httpsrv1.h")).
+:- pragma foreign_code("C", include_file("httpsrv1.c")).
 
 :- type request
     --->    request(
@@ -472,11 +467,6 @@ open_static_file(Path, Result, !IO) :-
 
 parse_url(String, Url) :-
     parse_url.parse_url(String, Url).
-
-%-----------------------------------------------------------------------------%
-
-% Workaround to force rebuild when C files are touched:
-% 7808c17
 
 %-----------------------------------------------------------------------------%
 % vim: ft=mercury ts=4 sts=4 sw=4 et
