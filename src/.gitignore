@@ -1,0 +1,6 @@
+*.mh
+*.err
+/Mercury/
+/httpsrv.init
+/libhttpsrv.a
+/libhttpsrv.so

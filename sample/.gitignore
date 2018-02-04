@@ -1,0 +1,6 @@
+*.mh
+*.err
+/Mercury/
+/Mercury.modules
+/httpsrv_test
+/tags
