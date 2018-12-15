@@ -21,7 +21,16 @@ Documentation
 The API begins in `src/httpsrv.m`. There is no documentation yet but hopefully
 you can figure it out from the sample application in `sample/httpsrv_test.m`.
 
-Please note that the API may change as needs arise.
+The API is subject to change as needs arise.
+
+httpsrv itself runs on a single thread since libuv implements a single
+threaded event loop. It is expected that users will spawn multiple *native*
+threads to handle requests so that handling of a single request will not
+block progress of the rest of the program. You will probably want to
+implement a thread pool of some sort.
+
+Mercury green threads (i.e. thread.spawn in non-.par grades) are not supported
+because we can't multiplex execution of Mercury code with execution of httpsrv.
 
 Building the sample application
 -------------------------------
