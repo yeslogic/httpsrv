@@ -53,10 +53,30 @@ main(!IO) :-
 :- pred request_handler(request::in, io::di, io::uo) is cc_multi.
 
 request_handler(Request, !IO) :-
-    % real_handler(Request, !IO).
-    thread.spawn(real_handler(Request), !IO).
+    ( if can_spawn_native then
+        % Spawn a native thread to serve the request if possible.
+        % In a real program you would likely place the request onto a queue,
+        % serviced by a thread pool.
+        thread.spawn_native(thread_handler(Request), SpawnRes, !IO),
+        (
+            SpawnRes = ok(_Thread)
+        ;
+            SpawnRes = error(Error),
+            Response = response(internal_server_error_500, [],
+                strings([Error])),
+            set_response(Request, Response, !IO)
+        )
+    else
+        real_handler(Request, !IO)
+    ).
 
-:- pred real_handler(request::in, io::di, io::uo) is cc_multi.
+:- pred thread_handler(request::in, thread::in, io::di, io::uo) is cc_multi.
+
+thread_handler(Request, _Thread, !IO) :-
+    real_handler(Request, !IO),
+    cc_multi_equal(!IO).
+
+:- pred real_handler(request::in, io::di, io::uo) is det.
 
 real_handler(Request, !IO) :-
     usleep(100000, !IO),
@@ -75,8 +95,7 @@ real_handler(Request, !IO) :-
     ;
         echo_handler(Request, Response, !IO)
     ),
-    set_response(Request, Response, !IO),
-    cc_multi_equal(!IO).
+    set_response(Request, Response, !IO).
 
 %-----------------------------------------------------------------------------%
 
