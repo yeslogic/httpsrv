@@ -79,7 +79,6 @@ thread_handler(Request, _Thread, !IO) :-
 :- pred real_handler(request::in, io::di, io::uo) is det.
 
 real_handler(Request, !IO) :-
-    usleep(100000, !IO),
     MaybePathDecoded = get_path_decoded(Request),
     (
         MaybePathDecoded = yes(PathDecoded),
@@ -93,6 +92,8 @@ real_handler(Request, !IO) :-
     ; upload_path(Resource) ->
         upload_handler(Request, Response, !IO)
     ;
+        % Simulate work.
+        usleep(100000, !IO),
         echo_handler(Request, Response, !IO)
     ),
     set_response(Request, Response, !IO).
