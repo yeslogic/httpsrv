@@ -12,7 +12,6 @@
 
 :- implementation.
 
-:- import_module cord.
 :- import_module int.
 :- import_module string.
 

@@ -54,7 +54,6 @@
 :- import_module pair.
 :- import_module string.
 
-:- import_module case_insensitive.
 :- import_module headers.
 :- use_module rfc2045.
 :- use_module rfc2183.

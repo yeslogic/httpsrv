@@ -1,6 +1,7 @@
 MAIN_TARGET = httpsrv_test
 GRADE = hlc.par.gc
 MCFLAGS += --grade $(GRADE)
+MCFLAGS += --warn-unused-imports --warn-dead-procs
 
 HTTPSRV_DIR = ..
 include $(HTTPSRV_DIR)/src/httpsrv.options
