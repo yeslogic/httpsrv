@@ -194,6 +194,10 @@
 
 % Utilities
 
+    % XXX This calls http-parser's http_parser_parse_url function which does
+    % not document exactly what it does. You should probably use a different
+    % URL parser.
+    %
 :- pred parse_url(string::in, url::out) is semidet.
 
 %-----------------------------------------------------------------------------%
@@ -203,7 +207,6 @@
 
 :- import_module int.
 :- import_module string.
-:- import_module time.
 
 :- import_module buffer.
 :- import_module buffer.disk.
@@ -383,6 +386,9 @@ get_referrer(Request) = MaybeReferrer :-
         parse_url.parse_url(Value, RelUrl)
     ->
         BaseUrl = get_url(Request),
+        % XXX url.resolve_relative doesn't resolve relative URLs yet.
+        % Not that Referer should be a relative URL (I think)
+        % so in that case we could probably just return no.
         url.resolve_relative(BaseUrl, RelUrl, Resolved),
         MaybeReferrer = yes(url.to_string(Resolved))
     ;
