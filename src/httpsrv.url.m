@@ -9,6 +9,9 @@
 
 :- pred is_absolute_url(url::in) is semidet.
 
+    % XXX Not finished implementing yet, does not resolve a relative-path to a
+    % base path.
+    %
 :- pred resolve_relative(url::in, url::in, url::out) is det.
 
 :- func to_string(url) = string.
