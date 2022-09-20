@@ -17,6 +17,10 @@
 
 :- import_module int.
 
+:- pragma foreign_decl("C", local, "
+    #include <fcntl.h>
+").
+
 open_static_file(Path, Result, !IO) :-
     open_static_file_2(Path, Fd, Size, Mtime, Error, !IO),
     ( Fd < 0 ->
