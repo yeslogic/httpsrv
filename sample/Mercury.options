@@ -6,11 +6,8 @@ MCFLAGS += --warn-unused-imports --warn-dead-procs
 HTTPSRV_DIR = ..
 include $(HTTPSRV_DIR)/src/httpsrv.options
 
-MLLIBS-httpsrv_test += -luv -lhttp_parser
-
-# for Windows
-# MLLIBS-httpsrv_test += -lws2_32 -lpsapi -liphlpapi
-# LDFLAGS-httpsrv_test += -pthread
+PLATFORM_LIBS =
+MLLIBS-httpsrv_test += -luv -lhttp_parser $(PLATFORM_LIBS)
 
 -include Mercury.params
 

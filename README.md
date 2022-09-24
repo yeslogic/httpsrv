@@ -35,13 +35,19 @@ because we can't multiplex execution of Mercury code with execution of httpsrv.
 Building the sample application
 -------------------------------
 
-On Linux, first install libuv and http-parser development libraries using
-your distribution's package manager.
+First install libuv and http-parser development libraries using your
+preferred package manager. If you are not using a package manager,
+you can try the git submodules in the `externals` directory as a starting
+point, but they are not updated regularly and you will need to figure out
+how to build them and link them with httpsrv.
 
 Run `make` in the sample directory to produce the `httpsrv_test` program.
-Start the program, then go to <http://localhost:8000> in a web browser to
-see the output. You can also visit URLs containing different paths or query
-parameters, e.g. <http://localhost:8000/foo?bar=1>
+On Windows (MinGW), please run `make WINDOWS=1`.
+
+Start the sample application, e.g. `./httpsrv_test`,
+and go to <http://localhost:8000> in a web browser to see the output.
+You can also visit URLs containing different paths or query parameters,
+e.g. <http://localhost:8000/foo?bar=1>
 
 You can test the static file and multipart/form-data support as well.
 Here is a curl command to upload a file:
