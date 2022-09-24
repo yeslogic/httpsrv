@@ -15,6 +15,7 @@
 :- implementation.
 
 :- import_module assoc_list.
+:- import_module int.
 :- import_module dir.
 :- import_module list.
 :- import_module maybe.
@@ -33,7 +34,7 @@ main(!IO) :-
     Settings = [
         bind_address("0.0.0.0" @ BindAddress),
         port(8000 @ Port),
-        max_body(1000000)
+        max_body(8 * 1024 * 1024)
     ],
     setup(request_handler, Settings, Res, !IO),
     (
